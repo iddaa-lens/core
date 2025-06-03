@@ -1,0 +1,57 @@
+-- name: GetSport :one
+SELECT * FROM sports WHERE id = sqlc.arg(id);
+
+-- name: ListSports :many
+SELECT * FROM sports ORDER BY id;
+
+-- name: UpsertSport :one
+INSERT INTO sports (
+    id, 
+    name, 
+    code, 
+    live_count, 
+    upcoming_count, 
+    events_count, 
+    odds_count, 
+    has_results, 
+    has_king_odd, 
+    has_digital_content, 
+    updated_at
+) VALUES (
+    sqlc.arg(id),
+    sqlc.arg(name),
+    sqlc.arg(code),
+    sqlc.arg(live_count),
+    sqlc.arg(upcoming_count),
+    sqlc.arg(events_count),
+    sqlc.arg(odds_count),
+    sqlc.arg(has_results),
+    sqlc.arg(has_king_odd),
+    sqlc.arg(has_digital_content),
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    code = EXCLUDED.code,
+    live_count = EXCLUDED.live_count,
+    upcoming_count = EXCLUDED.upcoming_count,
+    events_count = EXCLUDED.events_count,
+    odds_count = EXCLUDED.odds_count,
+    has_results = EXCLUDED.has_results,
+    has_king_odd = EXCLUDED.has_king_odd,
+    has_digital_content = EXCLUDED.has_digital_content,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;
+
+-- name: UpdateSportInfo :one
+UPDATE sports SET
+    live_count = sqlc.arg(live_count),
+    upcoming_count = sqlc.arg(upcoming_count),
+    events_count = sqlc.arg(events_count),
+    odds_count = sqlc.arg(odds_count),
+    has_results = sqlc.arg(has_results),
+    has_king_odd = sqlc.arg(has_king_odd),
+    has_digital_content = sqlc.arg(has_digital_content),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id)
+RETURNING *;

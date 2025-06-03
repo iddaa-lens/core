@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./sql/schema:/docker-entrypoint-initdb.d/schema
+    environment:
+      POSTGRES_DB: iddaa_core_dev
+      POSTGRES_USER: iddaa_dev
+      POSTGRES_PASSWORD: dev123
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=postgres://iddaa_dev:dev123@postgres:5432/iddaa_core_dev?sslmode=disable
+      - EXTERNAL_API_TIMEOUT=10
+    command: ["go", "run", "./cmd/cron"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=postgres://iddaa_dev:dev123@postgres:5432/iddaa_core_dev?sslmode=disable
+      - PORT=8080
+      - HOST=0.0.0.0
+    command: ["go", "run", "./cmd/api"]
+    depends_on:
+      postgres:
+        condition: service_healthy

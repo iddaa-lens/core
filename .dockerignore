@@ -1,0 +1,41 @@
+# Ignore development files
+.git
+.gitignore
+README.md
+docs/
+*.md
+
+# Ignore test files
+*_test.go
+testdata/
+
+# Ignore build artifacts
+bin/
+build/
+dist/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Ignore Docker files when building
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
