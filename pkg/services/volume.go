@@ -74,8 +74,9 @@ func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int
 	}
 
 	// Update database
+	totalEvents := len(volumes)
 	for _, vol := range volumes {
-		if err := s.updateEventVolume(ctx, vol); err != nil {
+		if err := s.updateEventVolume(ctx, vol, totalEvents); err != nil {
 			// Log error but continue with other events
 			fmt.Printf("Failed to update volume for event %s: %v\n", vol.EventID, err)
 			continue
@@ -85,17 +86,24 @@ func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int
 	return nil
 }
 
-func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume) error {
+func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume, totalEvents int) error {
 	// First, check if event exists
 	event, err := s.db.GetEventByExternalID(ctx, vol.EventID)
 	if err != nil {
 		return fmt.Errorf("event %s not found: %w", vol.EventID, err)
 	}
 
+	// Create volume percentage numeric value
+	var volumePercentageNumeric pgtype.Numeric
+	volumeStr := fmt.Sprintf("%.2f", vol.Percentage)
+	if err := volumePercentageNumeric.ScanScientific(volumeStr); err != nil {
+		return fmt.Errorf("failed to convert volume percentage %.2f: %w", vol.Percentage, err)
+	}
+
 	// Update event with volume data
 	_, err = s.db.UpdateEventVolume(ctx, database.UpdateEventVolumeParams{
 		ID:                      event.ID,
-		BettingVolumePercentage: func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(vol.Percentage); return n }(),
+		BettingVolumePercentage: volumePercentageNumeric,
 		VolumeRank:              pgtype.Int4{Int32: int32(vol.Rank), Valid: true},
 		VolumeUpdatedAt:         pgtype.Timestamp{Time: time.Now(), Valid: true},
 	})
@@ -103,12 +111,12 @@ func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume) 
 		return fmt.Errorf("failed to update event volume: %w", err)
 	}
 
-	// Record in history
+	// Record in history with the same volume percentage value
 	_, err = s.db.CreateVolumeHistory(ctx, database.CreateVolumeHistoryParams{
 		EventID:            pgtype.Int4{Int32: event.ID, Valid: true},
-		VolumePercentage:   func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(vol.Percentage); return n }(),
+		VolumePercentage:   volumePercentageNumeric,
 		RankPosition:       pgtype.Int4{Int32: int32(vol.Rank), Valid: true},
-		TotalEventsTracked: pgtype.Int4{Int32: int32(len(volumes)), Valid: true},
+		TotalEventsTracked: pgtype.Int4{Int32: int32(totalEvents), Valid: true},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create volume history: %w", err)
@@ -185,6 +193,3 @@ type HiddenGem struct {
 	MaxMovement float64 `json:"max_movement_percentage"`
 	Insight     string  `json:"insight"`
 }
-
-// Globals for volume service initialization
-var volumes []EventVolume

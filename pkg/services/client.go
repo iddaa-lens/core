@@ -150,7 +150,7 @@ func (c *IddaaClient) GetSportInfo() (*models.IddaaAPIResponse[models.IddaaSport
 	return &result, nil
 }
 
-func (c *IddaaClient) GetMarketConfig() (*models.IddaaAPIResponse[models.IddaaMarketConfig], error) {
+func (c *IddaaClient) GetMarketConfig() (*models.IddaaMarketConfigResponse, error) {
 	url := fmt.Sprintf("%s/sportsbook/get_market_config", c.baseURL)
 
 	resp, err := c.client.Get(url)
@@ -163,7 +163,7 @@ func (c *IddaaClient) GetMarketConfig() (*models.IddaaAPIResponse[models.IddaaMa
 		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
-	var result models.IddaaAPIResponse[models.IddaaMarketConfig]
+	var result models.IddaaMarketConfigResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

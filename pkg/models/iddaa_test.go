@@ -46,11 +46,11 @@ func TestIddaaAPIResponse_Unmarshal(t *testing.T) {
 	if comp.ID != 1 {
 		t.Errorf("Expected ID 1, got %d", comp.ID)
 	}
-	if comp.CountryCode != "TR" {
-		t.Errorf("Expected country code 'TR', got '%s'", comp.CountryCode)
+	if comp.CountryID != "TR" {
+		t.Errorf("Expected country ID 'TR', got '%s'", comp.CountryID)
 	}
-	if comp.ParentID != 100 {
-		t.Errorf("Expected parent ID 100, got %d", comp.ParentID)
+	if comp.Priority != 100 {
+		t.Errorf("Expected priority 100, got %d", comp.Priority)
 	}
 	if comp.IconURL != "https://example.com/icon.png" {
 		t.Errorf("Expected icon URL 'https://example.com/icon.png', got '%s'", comp.IconURL)
@@ -61,11 +61,11 @@ func TestIddaaAPIResponse_Unmarshal(t *testing.T) {
 	if comp.SportID != "1" {
 		t.Errorf("Expected sport ID '1', got '%s'", comp.SportID)
 	}
-	if comp.FullName != "Türkiye Süper Lig" {
-		t.Errorf("Expected full name 'Türkiye Süper Lig', got '%s'", comp.FullName)
+	if comp.Name != "Türkiye Süper Lig" {
+		t.Errorf("Expected name 'Türkiye Süper Lig', got '%s'", comp.Name)
 	}
-	if comp.ExternalRef != 1000 {
-		t.Errorf("Expected external ref 1000, got %d", comp.ExternalRef)
+	if comp.Reference != 1000 {
+		t.Errorf("Expected reference 1000, got %d", comp.Reference)
 	}
 }
 

@@ -48,21 +48,6 @@ type BigMover struct {
 	LastUpdated        pgtype.Timestamp `db:"last_updated" json:"last_updated"`
 }
 
-type Competition struct {
-	ID          int32            `db:"id" json:"id"`
-	IddaaID     int32            `db:"iddaa_id" json:"iddaa_id"`
-	ExternalRef pgtype.Int4      `db:"external_ref" json:"external_ref"`
-	CountryCode pgtype.Text      `db:"country_code" json:"country_code"`
-	ParentID    pgtype.Int4      `db:"parent_id" json:"parent_id"`
-	SportID     pgtype.Int4      `db:"sport_id" json:"sport_id"`
-	ShortName   pgtype.Text      `db:"short_name" json:"short_name"`
-	FullName    string           `db:"full_name" json:"full_name"`
-	Slug        string           `db:"slug" json:"slug"`
-	IconUrl     pgtype.Text      `db:"icon_url" json:"icon_url"`
-	CreatedAt   pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `db:"updated_at" json:"updated_at"`
-}
-
 type ContrarianBet struct {
 	Slug          string         `db:"slug" json:"slug"`
 	MatchName     interface{}    `db:"match_name" json:"match_name"`
@@ -92,7 +77,7 @@ type CurrentOdd struct {
 type Event struct {
 	ID                      int32            `db:"id" json:"id"`
 	ExternalID              string           `db:"external_id" json:"external_id"`
-	CompetitionID           pgtype.Int4      `db:"competition_id" json:"competition_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
 	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
 	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
 	Slug                    string           `db:"slug" json:"slug"`
@@ -110,6 +95,28 @@ type Event struct {
 	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
+type League struct {
+	ID         int32            `db:"id" json:"id"`
+	ExternalID string           `db:"external_id" json:"external_id"`
+	Name       string           `db:"name" json:"name"`
+	Country    pgtype.Text      `db:"country" json:"country"`
+	SportID    pgtype.Int4      `db:"sport_id" json:"sport_id"`
+	IsActive   pgtype.Bool      `db:"is_active" json:"is_active"`
+	Slug       pgtype.Text      `db:"slug" json:"slug"`
+	CreatedAt  pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt  pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+}
+
+type LeagueMapping struct {
+	ID                  int32            `db:"id" json:"id"`
+	InternalLeagueID    int32            `db:"internal_league_id" json:"internal_league_id"`
+	FootballApiLeagueID int32            `db:"football_api_league_id" json:"football_api_league_id"`
+	Confidence          pgtype.Numeric   `db:"confidence" json:"confidence"`
+	MappingMethod       string           `db:"mapping_method" json:"mapping_method"`
+	CreatedAt           pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+}
+
 type MarketType struct {
 	ID          int32            `db:"id" json:"id"`
 	Code        string           `db:"code" json:"code"`
@@ -122,7 +129,7 @@ type MarketType struct {
 
 type MatchEvent struct {
 	ID          int32            `db:"id" json:"id"`
-	EventID     int32            `db:"event_id" json:"event_id"`
+	EventID     pgtype.Int4      `db:"event_id" json:"event_id"`
 	Minute      int32            `db:"minute" json:"minute"`
 	EventType   string           `db:"event_type" json:"event_type"`
 	Team        string           `db:"team" json:"team"`
@@ -134,7 +141,7 @@ type MatchEvent struct {
 
 type MatchStatistic struct {
 	ID            int32            `db:"id" json:"id"`
-	EventID       int32            `db:"event_id" json:"event_id"`
+	EventID       pgtype.Int4      `db:"event_id" json:"event_id"`
 	IsHome        bool             `db:"is_home" json:"is_home"`
 	Shots         pgtype.Int4      `db:"shots" json:"shots"`
 	ShotsOnTarget pgtype.Int4      `db:"shots_on_target" json:"shots_on_target"`
@@ -221,10 +228,20 @@ type Team struct {
 	ID         int32            `db:"id" json:"id"`
 	ExternalID string           `db:"external_id" json:"external_id"`
 	Name       string           `db:"name" json:"name"`
-	Slug       string           `db:"slug" json:"slug"`
-	ShortName  pgtype.Text      `db:"short_name" json:"short_name"`
 	Country    pgtype.Text      `db:"country" json:"country"`
 	LogoUrl    pgtype.Text      `db:"logo_url" json:"logo_url"`
+	IsActive   pgtype.Bool      `db:"is_active" json:"is_active"`
+	Slug       pgtype.Text      `db:"slug" json:"slug"`
 	CreatedAt  pgtype.Timestamp `db:"created_at" json:"created_at"`
 	UpdatedAt  pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+}
+
+type TeamMapping struct {
+	ID                int32            `db:"id" json:"id"`
+	InternalTeamID    int32            `db:"internal_team_id" json:"internal_team_id"`
+	FootballApiTeamID int32            `db:"football_api_team_id" json:"football_api_team_id"`
+	Confidence        pgtype.Numeric   `db:"confidence" json:"confidence"`
+	MappingMethod     string           `db:"mapping_method" json:"mapping_method"`
+	CreatedAt         pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }

@@ -21,7 +21,7 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		jobName = flag.String("job", "", "Run specific job once (competitions, config, events, volume, distribution, analytics, market_config, statistics)")
+		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues)")
 		once    = flag.Bool("once", false, "Run job once and exit")
 	)
 	flag.Parse()
@@ -38,8 +38,8 @@ func main() {
 	// Initialize services
 	queries := database.New(db)
 	iddaaClient := services.NewIddaaClient(cfg)
-	competitionService := services.NewCompetitionService(queries, iddaaClient)
 	configService := services.NewConfigService(queries, iddaaClient)
+	sportsService := services.NewSportService(queries, iddaaClient)
 	eventsService := services.NewEventsService(queries, iddaaClient)
 	volumeService := services.NewVolumeService(queries, iddaaClient)
 	distributionService := services.NewDistributionService(queries, iddaaClient)
@@ -50,14 +50,14 @@ func main() {
 	jobManager := jobs.NewJobManager()
 
 	// Register jobs
-	competitionsJob := jobs.NewCompetitionsSyncJob(competitionService)
-	if err := jobManager.RegisterJob(competitionsJob); err != nil {
-		log.Fatalf("Failed to register competitions sync job: %v", err)
-	}
-
 	configJob := jobs.NewConfigSyncJob(configService, "WEB")
 	if err := jobManager.RegisterJob(configJob); err != nil {
 		log.Fatalf("Failed to register config sync job: %v", err)
+	}
+
+	sportsJob := jobs.NewSportsSyncJob(sportsService)
+	if err := jobManager.RegisterJob(sportsJob); err != nil {
+		log.Fatalf("Failed to register sports sync job: %v", err)
 	}
 
 	eventsJob := jobs.NewEventsSyncJob(iddaaClient, eventsService)
@@ -65,14 +65,14 @@ func main() {
 		log.Fatalf("Failed to register events sync job: %v", err)
 	}
 
-	// Register volume sync job for football (sport type 1)
-	volumeJob := jobs.NewVolumeSyncJob(volumeService, 1)
+	// Register volume sync job for all sports
+	volumeJob := jobs.NewVolumeSyncJob(volumeService, queries)
 	if err := jobManager.RegisterJob(volumeJob); err != nil {
 		log.Fatalf("Failed to register volume sync job: %v", err)
 	}
 
-	// Register distribution sync job for football (sport type 1)
-	distributionJob := jobs.NewDistributionSyncJob(distributionService, 1)
+	// Register distribution sync job for all sports
+	distributionJob := jobs.NewDistributionSyncJob(distributionService, queries)
 	if err := jobManager.RegisterJob(distributionJob); err != nil {
 		log.Fatalf("Failed to register distribution sync job: %v", err)
 	}
@@ -95,24 +95,30 @@ func main() {
 		log.Fatalf("Failed to register statistics sync job: %v", err)
 	}
 
+	// Register leagues sync job for Iddaa and Football API integration
+	leaguesJob := jobs.NewLeaguesSyncJob(queries, iddaaClient)
+	if err := jobManager.RegisterJob(leaguesJob); err != nil {
+		log.Fatalf("Failed to register leagues sync job: %v", err)
+	}
+
 	// Handle single job execution
 	if *once && *jobName != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
 		switch *jobName {
-		case "competitions":
-			log.Println("Running competitions sync job once...")
-			if err := competitionsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute competitions job: %v", err)
-			}
-			log.Println("Competitions sync completed successfully")
 		case "config":
 			log.Println("Running config sync job once...")
 			if err := configJob.Execute(ctx); err != nil {
 				log.Fatalf("Failed to execute config job: %v", err)
 			}
 			log.Println("Config sync completed successfully")
+		case "sports":
+			log.Println("Running sports sync job once...")
+			if err := sportsJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute sports job: %v", err)
+			}
+			log.Println("Sports sync completed successfully")
 		case "events":
 			log.Println("Running events sync job once...")
 			if err := eventsJob.Execute(ctx); err != nil {
@@ -149,24 +155,17 @@ func main() {
 				log.Fatalf("Failed to execute statistics job: %v", err)
 			}
 			log.Println("Statistics sync completed successfully")
+		case "leagues":
+			log.Println("Running leagues sync job once...")
+			if err := leaguesJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute leagues job: %v", err)
+			}
+			log.Println("Leagues sync completed successfully")
 		default:
-			log.Fatalf("Unknown job: %s. Available jobs: competitions, config, events, volume, distribution, analytics, market_config, statistics", *jobName)
+			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues", *jobName)
 		}
 		return
 	}
-
-	// Run initial competitions sync on startup
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-
-		log.Println("Running initial competitions sync...")
-		if err := competitionsJob.Execute(ctx); err != nil {
-			log.Printf("Failed to sync competitions on startup: %v", err)
-		} else {
-			log.Println("Initial competitions sync completed")
-		}
-	}()
 
 	// Start job manager
 	jobManager.Start()

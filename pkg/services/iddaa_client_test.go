@@ -114,8 +114,8 @@ func TestIddaaClient_GetCompetitions(t *testing.T) {
 				if comp.ID != 1 {
 					t.Errorf("Expected competition ID 1, got %d", comp.ID)
 				}
-				if comp.CountryCode != "TR" {
-					t.Errorf("Expected country code TR, got %s", comp.CountryCode)
+				if comp.CountryID != "TR" {
+					t.Errorf("Expected country ID TR, got %s", comp.CountryID)
 				}
 			}
 		})

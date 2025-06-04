@@ -18,12 +18,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/cron ./cmd/cr
 
 # Build api service (create placeholder if it doesn't exist)
 RUN if [ -d "./cmd/api" ] && [ -n "$(find ./cmd/api -name '*.go' -print -quit)" ]; then \
-        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/api ./cmd/api; \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/api ./cmd/api; \
     else \
-        echo '#!/bin/sh' > bin/api && \
-        echo 'echo "API service not implemented yet"' >> bin/api && \
-        echo 'sleep infinity' >> bin/api && \
-        chmod +x bin/api; \
+    echo '#!/bin/sh' > bin/api && \
+    echo 'echo "API service not implemented yet"' >> bin/api && \
+    echo 'sleep infinity' >> bin/api && \
+    chmod +x bin/api; \
     fi
 
 # Production stage

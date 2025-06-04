@@ -72,3 +72,20 @@ LEFT JOIN current_odds co ON od.event_id = co.event_id
     AND od.outcome = co.outcome
 WHERE od.event_id = sqlc.arg(event_id)
 ORDER BY od.market_id, od.outcome;
+
+-- name: GetEventDistributions :many
+SELECT * FROM outcome_distributions
+WHERE event_id = sqlc.arg(event_id)
+ORDER BY market_id, outcome;
+
+-- name: GetTopDistributions :many
+SELECT * FROM outcome_distributions
+ORDER BY bet_percentage DESC
+LIMIT sqlc.arg(limit_count);
+
+-- name: GetDistributionHistory :many
+SELECT * FROM outcome_distribution_history
+WHERE event_id = sqlc.arg(event_id)
+  AND market_id = sqlc.arg(market_id)
+  AND outcome = sqlc.arg(outcome)
+ORDER BY recorded_at DESC;

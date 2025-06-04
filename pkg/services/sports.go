@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/betslib/iddaa-core/pkg/database"
 	"github.com/betslib/iddaa-core/pkg/models"
@@ -68,6 +69,7 @@ func (s *SportService) saveSport(ctx context.Context, sport models.IddaaSportInf
 		ID:                int32(sport.SportID),
 		Name:              sportInfo.name,
 		Code:              sportInfo.code,
+		Slug:              generateSlug(sportInfo.name),
 		LiveCount:         pgtype.Int4{Int32: int32(sport.LiveCount), Valid: true},
 		UpcomingCount:     pgtype.Int4{Int32: int32(sport.UpcomingCount), Valid: true},
 		EventsCount:       pgtype.Int4{Int32: int32(sport.EventsCount), Valid: true},
@@ -102,4 +104,11 @@ func (s *SportService) ListSports(ctx context.Context) ([]database.Sport, error)
 		return nil, fmt.Errorf("failed to list sports: %w", err)
 	}
 	return sports, nil
+}
+
+// generateSlug creates a URL-friendly slug from a string
+func generateSlug(name string) string {
+	slug := strings.ToLower(name)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	return slug
 }

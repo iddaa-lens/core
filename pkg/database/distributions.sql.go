@@ -136,6 +136,49 @@ func (q *Queries) GetCurrentOddsForOutcome(ctx context.Context, arg GetCurrentOd
 	return items, nil
 }
 
+const getDistributionHistory = `-- name: GetDistributionHistory :many
+SELECT id, event_id, market_id, outcome, bet_percentage, previous_percentage, change_amount, recorded_at FROM outcome_distribution_history
+WHERE event_id = $1
+  AND market_id = $2
+  AND outcome = $3
+ORDER BY recorded_at DESC
+`
+
+type GetDistributionHistoryParams struct {
+	EventID  pgtype.Int4 `db:"event_id" json:"event_id"`
+	MarketID int32       `db:"market_id" json:"market_id"`
+	Outcome  string      `db:"outcome" json:"outcome"`
+}
+
+func (q *Queries) GetDistributionHistory(ctx context.Context, arg GetDistributionHistoryParams) ([]OutcomeDistributionHistory, error) {
+	rows, err := q.db.Query(ctx, getDistributionHistory, arg.EventID, arg.MarketID, arg.Outcome)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutcomeDistributionHistory{}
+	for rows.Next() {
+		var i OutcomeDistributionHistory
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.MarketID,
+			&i.Outcome,
+			&i.BetPercentage,
+			&i.PreviousPercentage,
+			&i.ChangeAmount,
+			&i.RecordedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getEventBettingPatterns = `-- name: GetEventBettingPatterns :many
 SELECT 
     od.market_id,
@@ -196,6 +239,42 @@ func (q *Queries) GetEventBettingPatterns(ctx context.Context, eventID pgtype.In
 	return items, nil
 }
 
+const getEventDistributions = `-- name: GetEventDistributions :many
+SELECT id, event_id, market_id, market_type_id, outcome, bet_percentage, implied_probability, value_indicator, last_updated FROM outcome_distributions
+WHERE event_id = $1
+ORDER BY market_id, outcome
+`
+
+func (q *Queries) GetEventDistributions(ctx context.Context, eventID pgtype.Int4) ([]OutcomeDistribution, error) {
+	rows, err := q.db.Query(ctx, getEventDistributions, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutcomeDistribution{}
+	for rows.Next() {
+		var i OutcomeDistribution
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.MarketID,
+			&i.MarketTypeID,
+			&i.Outcome,
+			&i.BetPercentage,
+			&i.ImpliedProbability,
+			&i.ValueIndicator,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOutcomeDistribution = `-- name: GetOutcomeDistribution :one
 SELECT id, event_id, market_id, market_type_id, outcome, bet_percentage, implied_probability, value_indicator, last_updated FROM outcome_distributions
 WHERE event_id = $1
@@ -224,6 +303,42 @@ func (q *Queries) GetOutcomeDistribution(ctx context.Context, arg GetOutcomeDist
 		&i.LastUpdated,
 	)
 	return i, err
+}
+
+const getTopDistributions = `-- name: GetTopDistributions :many
+SELECT id, event_id, market_id, market_type_id, outcome, bet_percentage, implied_probability, value_indicator, last_updated FROM outcome_distributions
+ORDER BY bet_percentage DESC
+LIMIT $1
+`
+
+func (q *Queries) GetTopDistributions(ctx context.Context, limitCount int32) ([]OutcomeDistribution, error) {
+	rows, err := q.db.Query(ctx, getTopDistributions, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutcomeDistribution{}
+	for rows.Next() {
+		var i OutcomeDistribution
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.MarketID,
+			&i.MarketTypeID,
+			&i.Outcome,
+			&i.BetPercentage,
+			&i.ImpliedProbability,
+			&i.ValueIndicator,
+			&i.LastUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const refreshContrarianBets = `-- name: RefreshContrarianBets :exec

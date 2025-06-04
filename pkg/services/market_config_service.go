@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/betslib/iddaa-core/pkg/database"
 	"github.com/betslib/iddaa-core/pkg/models"
@@ -31,31 +30,38 @@ func (s *MarketConfigService) SyncMarketConfigs(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch market configs: %w", err)
 	}
 
-	log.Printf("Fetched %d market configs from API", len(resp.Data))
+	log.Printf("Fetched %d market configs from API", len(resp.Data.Markets))
 
-	for _, config := range resp.Data {
-		if err := s.saveMarketConfig(ctx, config); err != nil {
-			log.Printf("Failed to save market config %d: %v", config.ID, err)
+	synced := 0
+	for marketKey, config := range resp.Data.Markets {
+		if err := s.saveMarketConfig(ctx, marketKey, config); err != nil {
+			log.Printf("Failed to save market config %s (ID: %d): %v", marketKey, config.ID, err)
 			continue
 		}
+		synced++
 	}
 
-	log.Println("Market config sync completed")
+	log.Printf("Market config sync completed. Synced %d out of %d configs", synced, len(resp.Data.Markets))
 	return nil
 }
 
-func (s *MarketConfigService) saveMarketConfig(ctx context.Context, config models.IddaaMarketConfig) error {
-	// Use external ID as code and name as description
-	params := database.UpsertMarketTypeByExternalIDParams{
-		ExternalID:  strconv.Itoa(config.ID),
-		Name:        config.Name,
+func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey string, config models.IddaaMarketConfig) error {
+	// Generate market type code from market key and subtype
+	// Market key format is like "2_821" where 2 is market type and 821 is subtype
+	marketTypeCode := fmt.Sprintf("MST_%d", config.MarketSubType)
+
+	// Use the Turkish name and description from the API
+	params := database.UpsertMarketTypeParams{
+		Code:        marketTypeCode,
+		Name:        config.Name, // Turkish name
 		Description: pgtype.Text{String: config.Description, Valid: config.Description != ""},
 	}
 
-	_, err := s.db.UpsertMarketTypeByExternalID(ctx, params)
+	_, err := s.db.UpsertMarketType(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to upsert market config: %w", err)
 	}
 
+	log.Printf("Synced market config: %s - %s (SubType: %d)", marketKey, config.Name, config.MarketSubType)
 	return nil
 }

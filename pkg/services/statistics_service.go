@@ -89,7 +89,7 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 func (s *StatisticsService) saveMatchStatistics(ctx context.Context, eventID int32, stats models.IddaaMatchStatistics) error {
 	// Upsert home team statistics
 	_, err := s.db.UpsertMatchStatistics(ctx, database.UpsertMatchStatisticsParams{
-		EventID:       eventID,
+		EventID:       pgtype.Int4{Int32: eventID, Valid: true},
 		IsHome:        true,
 		Shots:         pgtype.Int4{Int32: int32(stats.HomeStats.Shots), Valid: true},
 		ShotsOnTarget: pgtype.Int4{Int32: int32(stats.HomeStats.ShotsOnTarget), Valid: true},
@@ -110,7 +110,7 @@ func (s *StatisticsService) saveMatchStatistics(ctx context.Context, eventID int
 
 	// Upsert away team statistics
 	_, err = s.db.UpsertMatchStatistics(ctx, database.UpsertMatchStatisticsParams{
-		EventID:       eventID,
+		EventID:       pgtype.Int4{Int32: eventID, Valid: true},
 		IsHome:        false,
 		Shots:         pgtype.Int4{Int32: int32(stats.AwayStats.Shots), Valid: true},
 		ShotsOnTarget: pgtype.Int4{Int32: int32(stats.AwayStats.ShotsOnTarget), Valid: true},
@@ -134,7 +134,7 @@ func (s *StatisticsService) saveMatchStatistics(ctx context.Context, eventID int
 
 func (s *StatisticsService) saveMatchEvent(ctx context.Context, eventID int32, matchEvent models.IddaaMatchEvent) error {
 	_, err := s.db.CreateMatchEvent(ctx, database.CreateMatchEventParams{
-		EventID:     eventID,
+		EventID:     pgtype.Int4{Int32: eventID, Valid: true},
 		Minute:      int32(matchEvent.Minute),
 		EventType:   matchEvent.EventType,
 		Team:        matchEvent.Team,

@@ -348,7 +348,7 @@ SET
     volume_rank = $2,
     volume_updated_at = $3
 WHERE id = $4
-RETURNING id, external_id, competition_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
 `
 
 type UpdateEventVolumeParams struct {
@@ -369,7 +369,7 @@ func (q *Queries) UpdateEventVolume(ctx context.Context, arg UpdateEventVolumePa
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,

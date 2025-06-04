@@ -19,7 +19,7 @@ RETURNING id, event_id, minute, event_type, team, player, description, is_home, 
 `
 
 type CreateMatchEventParams struct {
-	EventID     int32       `db:"event_id" json:"event_id"`
+	EventID     pgtype.Int4 `db:"event_id" json:"event_id"`
 	Minute      int32       `db:"minute" json:"minute"`
 	EventType   string      `db:"event_type" json:"event_type"`
 	Team        string      `db:"team" json:"team"`
@@ -168,7 +168,7 @@ WHERE event_id = $1
 ORDER BY minute ASC, id ASC
 `
 
-func (q *Queries) GetMatchEvents(ctx context.Context, eventID int32) ([]MatchEvent, error) {
+func (q *Queries) GetMatchEvents(ctx context.Context, eventID pgtype.Int4) ([]MatchEvent, error) {
 	rows, err := q.db.Query(ctx, getMatchEvents, eventID)
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ WHERE event_id = $1
 ORDER BY is_home DESC
 `
 
-func (q *Queries) GetMatchStatistics(ctx context.Context, eventID int32) ([]MatchStatistic, error) {
+func (q *Queries) GetMatchStatistics(ctx context.Context, eventID pgtype.Int4) ([]MatchStatistic, error) {
 	rows, err := q.db.Query(ctx, getMatchStatistics, eventID)
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ SET
     half = $6,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $7
-RETURNING id, external_id, competition_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
 `
 
 type UpdateEventLiveDataParams struct {
@@ -280,7 +280,7 @@ func (q *Queries) UpdateEventLiveData(ctx context.Context, arg UpdateEventLiveDa
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,
@@ -330,7 +330,7 @@ RETURNING id, event_id, is_home, shots, shots_on_target, possession, corners, ye
 `
 
 type UpsertMatchStatisticsParams struct {
-	EventID       int32       `db:"event_id" json:"event_id"`
+	EventID       pgtype.Int4 `db:"event_id" json:"event_id"`
 	IsHome        bool        `db:"is_home" json:"is_home"`
 	Shots         pgtype.Int4 `db:"shots" json:"shots"`
 	ShotsOnTarget pgtype.Int4 `db:"shots_on_target" json:"shots_on_target"`

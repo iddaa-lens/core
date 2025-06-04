@@ -9,18 +9,20 @@ INSERT INTO sports (
     id, 
     name, 
     code, 
-    live_count, 
-    upcoming_count, 
-    events_count, 
-    odds_count, 
-    has_results, 
-    has_king_odd, 
-    has_digital_content, 
+    slug,
+    live_count,
+    upcoming_count,
+    events_count,
+    odds_count,
+    has_results,
+    has_king_odd,
+    has_digital_content,
     updated_at
 ) VALUES (
     sqlc.arg(id),
     sqlc.arg(name),
     sqlc.arg(code),
+    sqlc.arg(slug),
     sqlc.arg(live_count),
     sqlc.arg(upcoming_count),
     sqlc.arg(events_count),
@@ -33,6 +35,7 @@ INSERT INTO sports (
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     code = EXCLUDED.code,
+    slug = EXCLUDED.slug,
     live_count = EXCLUDED.live_count,
     upcoming_count = EXCLUDED.upcoming_count,
     events_count = EXCLUDED.events_count,
@@ -43,8 +46,11 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = CURRENT_TIMESTAMP
 RETURNING *;
 
--- name: UpdateSportInfo :one
+-- name: UpdateSport :one
 UPDATE sports SET
+    name = sqlc.arg(name),
+    code = sqlc.arg(code),
+    slug = sqlc.arg(slug),
     live_count = sqlc.arg(live_count),
     upcoming_count = sqlc.arg(upcoming_count),
     events_count = sqlc.arg(events_count),

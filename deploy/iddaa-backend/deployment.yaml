@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iddaa-api
+  namespace: iddaa-backend
+  labels:
+    app: iddaa-api
+    component: api
+    project: iddaa
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: iddaa-api
+  template:
+    metadata:
+      labels:
+        app: iddaa-api
+        component: api
+    spec:
+      containers:
+      - name: iddaa-api
+        image: omercr.azurecr.io/iddaa-backend/api:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iddaa-cron
+  namespace: iddaa-backend
+  labels:
+    app: iddaa-cron
+    component: cron
+    project: iddaa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iddaa-cron
+  template:
+    metadata:
+      labels:
+        app: iddaa-cron
+        component: cron
+    spec:
+      containers:
+      - name: iddaa-cron
+        image: omercr.azurecr.io/iddaa-backend/cron:latest
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: iddaa-backend-secrets
+              key: DATABASE_URL
+        - name: FOOTBALL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: iddaa-backend-secrets
+              key: FOOTBALL_API_KEY
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL

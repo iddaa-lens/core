@@ -12,24 +12,24 @@ import (
 )
 
 const createEvent = `-- name: CreateEvent :one
-INSERT INTO events (external_id, competition_id, home_team_id, away_team_id, event_date, status)
+INSERT INTO events (external_id, league_id, home_team_id, away_team_id, event_date, status)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, external_id, competition_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
 `
 
 type CreateEventParams struct {
-	ExternalID    string           `db:"external_id" json:"external_id"`
-	CompetitionID pgtype.Int4      `db:"competition_id" json:"competition_id"`
-	HomeTeamID    pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
-	AwayTeamID    pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
-	EventDate     pgtype.Timestamp `db:"event_date" json:"event_date"`
-	Status        string           `db:"status" json:"status"`
+	ExternalID string           `db:"external_id" json:"external_id"`
+	LeagueID   pgtype.Int4      `db:"league_id" json:"league_id"`
+	HomeTeamID pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	EventDate  pgtype.Timestamp `db:"event_date" json:"event_date"`
+	Status     string           `db:"status" json:"status"`
 }
 
 func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error) {
 	row := q.db.QueryRow(ctx, createEvent,
 		arg.ExternalID,
-		arg.CompetitionID,
+		arg.LeagueID,
 		arg.HomeTeamID,
 		arg.AwayTeamID,
 		arg.EventDate,
@@ -39,7 +39,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,
@@ -60,21 +60,21 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT e.id, e.external_id, e.competition_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
        ht.name as home_team_name,
        at.name as away_team_name,
-       c.full_name as competition_name
+       l.name as league_name
 FROM events e
 JOIN teams ht ON e.home_team_id = ht.id
 JOIN teams at ON e.away_team_id = at.id
-JOIN competitions c ON e.competition_id = c.id
+JOIN leagues l ON e.league_id = l.id
 WHERE e.id = $1
 `
 
 type GetEventRow struct {
 	ID                      int32            `db:"id" json:"id"`
 	ExternalID              string           `db:"external_id" json:"external_id"`
-	CompetitionID           pgtype.Int4      `db:"competition_id" json:"competition_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
 	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
 	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
 	Slug                    string           `db:"slug" json:"slug"`
@@ -92,7 +92,7 @@ type GetEventRow struct {
 	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 	HomeTeamName            string           `db:"home_team_name" json:"home_team_name"`
 	AwayTeamName            string           `db:"away_team_name" json:"away_team_name"`
-	CompetitionName         string           `db:"competition_name" json:"competition_name"`
+	LeagueName              string           `db:"league_name" json:"league_name"`
 }
 
 func (q *Queries) GetEvent(ctx context.Context, id int32) (GetEventRow, error) {
@@ -101,7 +101,7 @@ func (q *Queries) GetEvent(ctx context.Context, id int32) (GetEventRow, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,
@@ -119,27 +119,27 @@ func (q *Queries) GetEvent(ctx context.Context, id int32) (GetEventRow, error) {
 		&i.UpdatedAt,
 		&i.HomeTeamName,
 		&i.AwayTeamName,
-		&i.CompetitionName,
+		&i.LeagueName,
 	)
 	return i, err
 }
 
 const getEventByExternalID = `-- name: GetEventByExternalID :one
-SELECT e.id, e.external_id, e.competition_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
        ht.name as home_team_name,
        at.name as away_team_name,
-       c.full_name as competition_name
+       l.name as league_name
 FROM events e
 JOIN teams ht ON e.home_team_id = ht.id
 JOIN teams at ON e.away_team_id = at.id
-JOIN competitions c ON e.competition_id = c.id
+JOIN leagues l ON e.league_id = l.id
 WHERE e.external_id = $1
 `
 
 type GetEventByExternalIDRow struct {
 	ID                      int32            `db:"id" json:"id"`
 	ExternalID              string           `db:"external_id" json:"external_id"`
-	CompetitionID           pgtype.Int4      `db:"competition_id" json:"competition_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
 	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
 	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
 	Slug                    string           `db:"slug" json:"slug"`
@@ -157,7 +157,7 @@ type GetEventByExternalIDRow struct {
 	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 	HomeTeamName            string           `db:"home_team_name" json:"home_team_name"`
 	AwayTeamName            string           `db:"away_team_name" json:"away_team_name"`
-	CompetitionName         string           `db:"competition_name" json:"competition_name"`
+	LeagueName              string           `db:"league_name" json:"league_name"`
 }
 
 func (q *Queries) GetEventByExternalID(ctx context.Context, externalID string) (GetEventByExternalIDRow, error) {
@@ -166,7 +166,7 @@ func (q *Queries) GetEventByExternalID(ctx context.Context, externalID string) (
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,
@@ -184,20 +184,20 @@ func (q *Queries) GetEventByExternalID(ctx context.Context, externalID string) (
 		&i.UpdatedAt,
 		&i.HomeTeamName,
 		&i.AwayTeamName,
-		&i.CompetitionName,
+		&i.LeagueName,
 	)
 	return i, err
 }
 
 const listEventsByDate = `-- name: ListEventsByDate :many
-SELECT e.id, e.external_id, e.competition_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.created_at, e.updated_at, 
        ht.name as home_team_name,
        at.name as away_team_name,
-       c.full_name as competition_name
+       l.name as league_name
 FROM events e
 JOIN teams ht ON e.home_team_id = ht.id
 JOIN teams at ON e.away_team_id = at.id
-JOIN competitions c ON e.competition_id = c.id
+JOIN leagues l ON e.league_id = l.id
 WHERE DATE(e.event_date) = DATE($1)
 ORDER BY e.event_date
 `
@@ -205,7 +205,7 @@ ORDER BY e.event_date
 type ListEventsByDateRow struct {
 	ID                      int32            `db:"id" json:"id"`
 	ExternalID              string           `db:"external_id" json:"external_id"`
-	CompetitionID           pgtype.Int4      `db:"competition_id" json:"competition_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
 	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
 	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
 	Slug                    string           `db:"slug" json:"slug"`
@@ -223,7 +223,7 @@ type ListEventsByDateRow struct {
 	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 	HomeTeamName            string           `db:"home_team_name" json:"home_team_name"`
 	AwayTeamName            string           `db:"away_team_name" json:"away_team_name"`
-	CompetitionName         string           `db:"competition_name" json:"competition_name"`
+	LeagueName              string           `db:"league_name" json:"league_name"`
 }
 
 func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) ([]ListEventsByDateRow, error) {
@@ -238,7 +238,7 @@ func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) (
 		if err := rows.Scan(
 			&i.ID,
 			&i.ExternalID,
-			&i.CompetitionID,
+			&i.LeagueID,
 			&i.HomeTeamID,
 			&i.AwayTeamID,
 			&i.Slug,
@@ -256,7 +256,7 @@ func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) (
 			&i.UpdatedAt,
 			&i.HomeTeamName,
 			&i.AwayTeamName,
-			&i.CompetitionName,
+			&i.LeagueName,
 		); err != nil {
 			return nil, err
 		}
@@ -272,7 +272,7 @@ const updateEventStatus = `-- name: UpdateEventStatus :one
 UPDATE events 
 SET status = $1, home_score = $2, away_score = $3, updated_at = CURRENT_TIMESTAMP
 WHERE id = $4
-RETURNING id, external_id, competition_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
 `
 
 type UpdateEventStatusParams struct {
@@ -293,7 +293,7 @@ func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusPa
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,
@@ -314,10 +314,10 @@ func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusPa
 }
 
 const upsertEvent = `-- name: UpsertEvent :one
-INSERT INTO events (external_id, competition_id, home_team_id, away_team_id, event_date, status, home_score, away_score)
+INSERT INTO events (external_id, league_id, home_team_id, away_team_id, event_date, status, home_score, away_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (external_id) DO UPDATE SET
-    competition_id = EXCLUDED.competition_id,
+    league_id = EXCLUDED.league_id,
     home_team_id = EXCLUDED.home_team_id,
     away_team_id = EXCLUDED.away_team_id,
     event_date = EXCLUDED.event_date,
@@ -325,24 +325,24 @@ ON CONFLICT (external_id) DO UPDATE SET
     home_score = EXCLUDED.home_score,
     away_score = EXCLUDED.away_score,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, external_id, competition_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
 `
 
 type UpsertEventParams struct {
-	ExternalID    string           `db:"external_id" json:"external_id"`
-	CompetitionID pgtype.Int4      `db:"competition_id" json:"competition_id"`
-	HomeTeamID    pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
-	AwayTeamID    pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
-	EventDate     pgtype.Timestamp `db:"event_date" json:"event_date"`
-	Status        string           `db:"status" json:"status"`
-	HomeScore     pgtype.Int4      `db:"home_score" json:"home_score"`
-	AwayScore     pgtype.Int4      `db:"away_score" json:"away_score"`
+	ExternalID string           `db:"external_id" json:"external_id"`
+	LeagueID   pgtype.Int4      `db:"league_id" json:"league_id"`
+	HomeTeamID pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	EventDate  pgtype.Timestamp `db:"event_date" json:"event_date"`
+	Status     string           `db:"status" json:"status"`
+	HomeScore  pgtype.Int4      `db:"home_score" json:"home_score"`
+	AwayScore  pgtype.Int4      `db:"away_score" json:"away_score"`
 }
 
 func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (Event, error) {
 	row := q.db.QueryRow(ctx, upsertEvent,
 		arg.ExternalID,
-		arg.CompetitionID,
+		arg.LeagueID,
 		arg.HomeTeamID,
 		arg.AwayTeamID,
 		arg.EventDate,
@@ -354,7 +354,7 @@ func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (Event
 	err := row.Scan(
 		&i.ID,
 		&i.ExternalID,
-		&i.CompetitionID,
+		&i.LeagueID,
 		&i.HomeTeamID,
 		&i.AwayTeamID,
 		&i.Slug,

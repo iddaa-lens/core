@@ -74,21 +74,27 @@ func (q *Queries) ListSports(ctx context.Context) ([]Sport, error) {
 	return items, nil
 }
 
-const updateSportInfo = `-- name: UpdateSportInfo :one
+const updateSport = `-- name: UpdateSport :one
 UPDATE sports SET
-    live_count = $1,
-    upcoming_count = $2,
-    events_count = $3,
-    odds_count = $4,
-    has_results = $5,
-    has_king_odd = $6,
-    has_digital_content = $7,
+    name = $1,
+    code = $2,
+    slug = $3,
+    live_count = $4,
+    upcoming_count = $5,
+    events_count = $6,
+    odds_count = $7,
+    has_results = $8,
+    has_king_odd = $9,
+    has_digital_content = $10,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $8
+WHERE id = $11
 RETURNING id, name, code, slug, live_count, upcoming_count, events_count, odds_count, has_results, has_king_odd, has_digital_content, created_at, updated_at
 `
 
-type UpdateSportInfoParams struct {
+type UpdateSportParams struct {
+	Name              string      `db:"name" json:"name"`
+	Code              string      `db:"code" json:"code"`
+	Slug              string      `db:"slug" json:"slug"`
 	LiveCount         pgtype.Int4 `db:"live_count" json:"live_count"`
 	UpcomingCount     pgtype.Int4 `db:"upcoming_count" json:"upcoming_count"`
 	EventsCount       pgtype.Int4 `db:"events_count" json:"events_count"`
@@ -99,8 +105,11 @@ type UpdateSportInfoParams struct {
 	ID                int32       `db:"id" json:"id"`
 }
 
-func (q *Queries) UpdateSportInfo(ctx context.Context, arg UpdateSportInfoParams) (Sport, error) {
-	row := q.db.QueryRow(ctx, updateSportInfo,
+func (q *Queries) UpdateSport(ctx context.Context, arg UpdateSportParams) (Sport, error) {
+	row := q.db.QueryRow(ctx, updateSport,
+		arg.Name,
+		arg.Code,
+		arg.Slug,
 		arg.LiveCount,
 		arg.UpcomingCount,
 		arg.EventsCount,
@@ -134,13 +143,14 @@ INSERT INTO sports (
     id, 
     name, 
     code, 
-    live_count, 
-    upcoming_count, 
-    events_count, 
-    odds_count, 
-    has_results, 
-    has_king_odd, 
-    has_digital_content, 
+    slug,
+    live_count,
+    upcoming_count,
+    events_count,
+    odds_count,
+    has_results,
+    has_king_odd,
+    has_digital_content,
     updated_at
 ) VALUES (
     $1,
@@ -153,11 +163,13 @@ INSERT INTO sports (
     $8,
     $9,
     $10,
+    $11,
     CURRENT_TIMESTAMP
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     code = EXCLUDED.code,
+    slug = EXCLUDED.slug,
     live_count = EXCLUDED.live_count,
     upcoming_count = EXCLUDED.upcoming_count,
     events_count = EXCLUDED.events_count,
@@ -173,6 +185,7 @@ type UpsertSportParams struct {
 	ID                int32       `db:"id" json:"id"`
 	Name              string      `db:"name" json:"name"`
 	Code              string      `db:"code" json:"code"`
+	Slug              string      `db:"slug" json:"slug"`
 	LiveCount         pgtype.Int4 `db:"live_count" json:"live_count"`
 	UpcomingCount     pgtype.Int4 `db:"upcoming_count" json:"upcoming_count"`
 	EventsCount       pgtype.Int4 `db:"events_count" json:"events_count"`
@@ -187,6 +200,7 @@ func (q *Queries) UpsertSport(ctx context.Context, arg UpsertSportParams) (Sport
 		arg.ID,
 		arg.Name,
 		arg.Code,
+		arg.Slug,
 		arg.LiveCount,
 		arg.UpcomingCount,
 		arg.EventsCount,

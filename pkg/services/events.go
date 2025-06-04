@@ -60,14 +60,14 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 
 		// Upsert event
 		eventRecord, err := s.db.UpsertEvent(ctx, database.UpsertEventParams{
-			ExternalID:    strconv.Itoa(event.ID),
-			CompetitionID: pgtype.Int4{Int32: int32(competitionID), Valid: competitionID > 0},
-			HomeTeamID:    pgtype.Int4{Int32: int32(homeTeamID), Valid: true},
-			AwayTeamID:    pgtype.Int4{Int32: int32(awayTeamID), Valid: true},
-			EventDate:     pgtype.Timestamp{Time: eventDate, Valid: true},
-			Status:        statusStr,
-			HomeScore:     pgtype.Int4{Valid: false},
-			AwayScore:     pgtype.Int4{Valid: false},
+			ExternalID: strconv.Itoa(event.ID),
+			LeagueID:   pgtype.Int4{Int32: int32(competitionID), Valid: competitionID > 0},
+			HomeTeamID: pgtype.Int4{Int32: int32(homeTeamID), Valid: true},
+			AwayTeamID: pgtype.Int4{Int32: int32(awayTeamID), Valid: true},
+			EventDate:  pgtype.Timestamp{Time: eventDate, Valid: true},
+			Status:     statusStr,
+			HomeScore:  pgtype.Int4{Valid: false},
+			AwayScore:  pgtype.Int4{Valid: false},
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upsert event %d: %w", event.ID, err)
@@ -133,7 +133,6 @@ func (s *EventsService) upsertTeam(ctx context.Context, teamName, externalID str
 	team, err := s.db.UpsertTeam(ctx, database.UpsertTeamParams{
 		ExternalID: externalID,
 		Name:       teamName,
-		ShortName:  pgtype.Text{String: teamName, Valid: true},
 		Country:    pgtype.Text{Valid: false},
 		LogoUrl:    pgtype.Text{Valid: false},
 	})
@@ -145,12 +144,13 @@ func (s *EventsService) upsertTeam(ctx context.Context, teamName, externalID str
 
 // getCompetitionID retrieves the competition ID, returns 0 if not found
 func (s *EventsService) getCompetitionID(ctx context.Context, iddaaCompetitionID int) (int, error) {
-	competition, err := s.db.GetCompetitionByIddaaID(ctx, int32(iddaaCompetitionID))
+	// Try to find league by external ID
+	league, err := s.db.GetLeagueByExternalID(ctx, fmt.Sprintf("%d", iddaaCompetitionID))
 	if err != nil {
-		// Return 0 if competition not found - this will make CompetitionID null in events table
+		// Return 0 if league not found - this will make CompetitionID null in events table
 		return 0, nil
 	}
-	return int(competition.ID), nil
+	return int(league.ID), nil
 }
 
 // processMarkets processes all markets and their odds for an event
@@ -353,4 +353,13 @@ func (s *EventsService) getMarketTypeDescription(subType int, specialValue strin
 		return fmt.Sprintf("%s (%s)", baseName, specialValue)
 	}
 	return baseName
+}
+
+// GetActiveSports returns all active sports from the database
+func (s *EventsService) GetActiveSports(ctx context.Context) ([]database.Sport, error) {
+	sports, err := s.db.ListSports(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sports: %w", err)
+	}
+	return sports, nil
 }

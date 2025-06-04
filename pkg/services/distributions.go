@@ -97,18 +97,24 @@ func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eve
 		// Record exists, track the change
 		currentFloat, _ := current.BetPercentage.Float64Value()
 		previousPercentage = pgtype.Numeric{}
-		_ = previousPercentage.Scan(currentFloat.Float64)
+		prevStr := fmt.Sprintf("%.2f", currentFloat.Float64)
+		if err := previousPercentage.ScanScientific(prevStr); err != nil {
+			return fmt.Errorf("failed to convert previous percentage %.2f: %w", currentFloat.Float64, err)
+		}
 
 		// Record history if percentage changed
 		if currentFloat.Float64 != percentage {
-			newPercentage := pgtype.Numeric{}
-			_ = newPercentage.Scan(percentage)
+			newPercentageHist := pgtype.Numeric{}
+			newStr := fmt.Sprintf("%.2f", percentage)
+			if err := newPercentageHist.ScanScientific(newStr); err != nil {
+				return fmt.Errorf("failed to convert new percentage %.2f: %w", percentage, err)
+			}
 
 			_, err = s.db.CreateDistributionHistory(ctx, database.CreateDistributionHistoryParams{
 				EventID:            pgtype.Int4{Int32: eventID, Valid: true},
 				MarketID:           int32(marketID),
 				Outcome:            outcome,
-				BetPercentage:      newPercentage,
+				BetPercentage:      newPercentageHist,
 				PreviousPercentage: previousPercentage,
 			})
 			if err != nil {
@@ -125,7 +131,10 @@ func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eve
 
 	// Upsert the distribution
 	newPercentage := pgtype.Numeric{}
-	_ = newPercentage.Scan(percentage)
+	percentageStr := fmt.Sprintf("%.2f", percentage)
+	if err := newPercentage.ScanScientific(percentageStr); err != nil {
+		return fmt.Errorf("failed to convert percentage %.2f: %w", percentage, err)
+	}
 
 	_, err = s.db.UpsertOutcomeDistribution(ctx, database.UpsertOutcomeDistributionParams{
 		EventID:            pgtype.Int4{Int32: eventID, Valid: true},
@@ -161,7 +170,10 @@ func (s *DistributionService) getImpliedProbability(ctx context.Context, eventID
 
 	impliedProb := (1.0 / oddsFloat.Float64) * 100
 	result := pgtype.Numeric{}
-	_ = result.Scan(impliedProb)
+	impliedStr := fmt.Sprintf("%.2f", impliedProb)
+	if err := result.ScanScientific(impliedStr); err != nil {
+		return pgtype.Numeric{Valid: false}, fmt.Errorf("failed to convert implied probability %.2f: %w", impliedProb, err)
+	}
 	return result, nil
 }
 

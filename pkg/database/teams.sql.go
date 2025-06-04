@@ -12,15 +12,14 @@ import (
 )
 
 const createTeam = `-- name: CreateTeam :one
-INSERT INTO teams (external_id, name, short_name, country, logo_url)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at
+INSERT INTO teams (external_id, name, country, logo_url)
+VALUES ($1, $2, $3, $4)
+RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
 `
 
 type CreateTeamParams struct {
 	ExternalID string      `db:"external_id" json:"external_id"`
 	Name       string      `db:"name" json:"name"`
-	ShortName  pgtype.Text `db:"short_name" json:"short_name"`
 	Country    pgtype.Text `db:"country" json:"country"`
 	LogoUrl    pgtype.Text `db:"logo_url" json:"logo_url"`
 }
@@ -29,7 +28,6 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 	row := q.db.QueryRow(ctx, createTeam,
 		arg.ExternalID,
 		arg.Name,
-		arg.ShortName,
 		arg.Country,
 		arg.LogoUrl,
 	)
@@ -38,10 +36,10 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 		&i.ID,
 		&i.ExternalID,
 		&i.Name,
-		&i.Slug,
-		&i.ShortName,
 		&i.Country,
 		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -49,7 +47,7 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 }
 
 const getTeam = `-- name: GetTeam :one
-SELECT id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at FROM teams WHERE id = $1
+SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams WHERE id = $1
 `
 
 func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
@@ -59,10 +57,10 @@ func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
 		&i.ID,
 		&i.ExternalID,
 		&i.Name,
-		&i.Slug,
-		&i.ShortName,
 		&i.Country,
 		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -70,7 +68,7 @@ func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
 }
 
 const getTeamByExternalID = `-- name: GetTeamByExternalID :one
-SELECT id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at FROM teams WHERE external_id = $1
+SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams WHERE external_id = $1
 `
 
 func (q *Queries) GetTeamByExternalID(ctx context.Context, externalID string) (Team, error) {
@@ -80,10 +78,10 @@ func (q *Queries) GetTeamByExternalID(ctx context.Context, externalID string) (T
 		&i.ID,
 		&i.ExternalID,
 		&i.Name,
-		&i.Slug,
-		&i.ShortName,
 		&i.Country,
 		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -91,9 +89,8 @@ func (q *Queries) GetTeamByExternalID(ctx context.Context, externalID string) (T
 }
 
 const searchTeams = `-- name: SearchTeams :many
-SELECT id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at FROM teams 
+SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams 
 WHERE name ILIKE '%' || $1 || '%' 
-OR short_name ILIKE '%' || $1 || '%'
 ORDER BY name
 LIMIT $2
 `
@@ -116,10 +113,10 @@ func (q *Queries) SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Tea
 			&i.ID,
 			&i.ExternalID,
 			&i.Name,
-			&i.Slug,
-			&i.ShortName,
 			&i.Country,
 			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -135,23 +132,21 @@ func (q *Queries) SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Tea
 
 const updateTeam = `-- name: UpdateTeam :one
 UPDATE teams 
-SET name = $1, short_name = $2, country = $3, logo_url = $4, updated_at = CURRENT_TIMESTAMP
-WHERE id = $5
-RETURNING id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at
+SET name = $1, country = $2, logo_url = $3, updated_at = CURRENT_TIMESTAMP
+WHERE id = $4
+RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
 `
 
 type UpdateTeamParams struct {
-	Name      string      `db:"name" json:"name"`
-	ShortName pgtype.Text `db:"short_name" json:"short_name"`
-	Country   pgtype.Text `db:"country" json:"country"`
-	LogoUrl   pgtype.Text `db:"logo_url" json:"logo_url"`
-	ID        int32       `db:"id" json:"id"`
+	Name    string      `db:"name" json:"name"`
+	Country pgtype.Text `db:"country" json:"country"`
+	LogoUrl pgtype.Text `db:"logo_url" json:"logo_url"`
+	ID      int32       `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error) {
 	row := q.db.QueryRow(ctx, updateTeam,
 		arg.Name,
-		arg.ShortName,
 		arg.Country,
 		arg.LogoUrl,
 		arg.ID,
@@ -161,10 +156,10 @@ func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, e
 		&i.ID,
 		&i.ExternalID,
 		&i.Name,
-		&i.Slug,
-		&i.ShortName,
 		&i.Country,
 		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -172,21 +167,19 @@ func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, e
 }
 
 const upsertTeam = `-- name: UpsertTeam :one
-INSERT INTO teams (external_id, name, short_name, country, logo_url)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO teams (external_id, name, country, logo_url)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
-    short_name = EXCLUDED.short_name,
     country = EXCLUDED.country,
     logo_url = EXCLUDED.logo_url,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, external_id, name, slug, short_name, country, logo_url, created_at, updated_at
+RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
 `
 
 type UpsertTeamParams struct {
 	ExternalID string      `db:"external_id" json:"external_id"`
 	Name       string      `db:"name" json:"name"`
-	ShortName  pgtype.Text `db:"short_name" json:"short_name"`
 	Country    pgtype.Text `db:"country" json:"country"`
 	LogoUrl    pgtype.Text `db:"logo_url" json:"logo_url"`
 }
@@ -195,7 +188,6 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, e
 	row := q.db.QueryRow(ctx, upsertTeam,
 		arg.ExternalID,
 		arg.Name,
-		arg.ShortName,
 		arg.Country,
 		arg.LogoUrl,
 	)
@@ -204,10 +196,10 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, e
 		&i.ID,
 		&i.ExternalID,
 		&i.Name,
-		&i.Slug,
-		&i.ShortName,
 		&i.Country,
 		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

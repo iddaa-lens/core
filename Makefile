@@ -3,6 +3,7 @@ include scripts/make/build.mk
 include scripts/make/dev.mk
 include scripts/make/test.mk
 include scripts/make/db.mk
+include scripts/make/docker.mk
 
 .DEFAULT_GOAL := help
 
@@ -23,8 +24,13 @@ help: ## Show this help message
 	@echo 'Database:'
 	@awk '/^[a-zA-Z_-]+:.*?## / { printf "  %-18s %s\n", $$1, substr($$0, index($$0, "## ") + 3) }' scripts/make/db.mk
 	@echo ''
+	@echo 'Docker:'
+	@awk '/^[a-zA-Z_-]+:.*?## / { printf "  %-18s %s\n", $$1, substr($$0, index($$0, "## ") + 3) }' scripts/make/docker.mk
+	@echo ''
 	@echo 'Examples:'
 	@echo '  make build              # Build all services'
 	@echo '  make test               # Run all tests'
 	@echo '  make run-cron           # Run cron service'
-	@echo '  DATABASE_URL=postgres://... make migrate  # Run migrations'
+	@echo '  make build-images ORG=iddaa-backend TAG=latest  # Build Docker images'
+	@echo '  make push-images ORG=iddaa-backend TAG=latest   # Push Docker images'
+	@echo '  DATABASE_URL=postgres://... make migrate        # Run migrations'

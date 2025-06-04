@@ -18,17 +18,6 @@ type IddaaEventsData struct {
 	Events  []IddaaEvent `json:"events"`
 }
 
-type IddaaCompetition struct {
-	ID          int    `json:"i"`
-	CountryCode string `json:"cid"`
-	ParentID    int    `json:"p"`
-	IconURL     string `json:"ic"`
-	ShortName   string `json:"sn"`
-	SportID     string `json:"si"`
-	FullName    string `json:"n"`
-	ExternalRef int    `json:"cref"`
-}
-
 type IddaaEvent struct {
 	ID            int           `json:"i"`
 	BulletinID    int           `json:"bri"`
@@ -84,17 +73,33 @@ type IddaaSportInfo struct {
 	HasDigitalContent bool `json:"hd"` // Has digital content
 }
 
+// IddaaMarketConfigResponse represents the response from get_market_config endpoint
+type IddaaMarketConfigResponse struct {
+	IsSuccess bool                  `json:"isSuccess"`
+	Data      IddaaMarketConfigData `json:"data"`
+	Message   string                `json:"message"`
+}
+
+// IddaaMarketConfigData contains the market configurations
+type IddaaMarketConfigData struct {
+	Markets map[string]IddaaMarketConfig `json:"m"`
+}
+
+// IddaaMarketConfig represents a single market configuration
 type IddaaMarketConfig struct {
-	ID          int    `json:"i"`  // Market ID
-	Name        string `json:"n"`  // Market name
-	ShortName   string `json:"sn"` // Short name
-	Type        string `json:"t"`  // Market type
-	SubType     string `json:"st"` // Market sub type
-	SportID     int    `json:"si"` // Sport ID
-	IsActive    bool   `json:"ia"` // Is active
-	DisplayName string `json:"dn"` // Display name
-	Description string `json:"d"`  // Description
-	SortOrder   int    `json:"so"` // Sort order
+	ID             int    `json:"i"`    // Market ID
+	Name           string `json:"n"`    // Market name (Turkish)
+	Description    string `json:"d"`    // Market description (Turkish)
+	IsLive         bool   `json:"il"`   // Is live market
+	MarketType     int    `json:"mt"`   // Market type
+	MinMarketValue int    `json:"mmdv"` // Min market default value
+	MaxMarketValue int    `json:"mmlv"` // Max market limit value
+	Priority       int    `json:"p"`    // Priority
+	SportType      int    `json:"st"`   // Sport type
+	MarketSubType  int    `json:"mst"`  // Market sub type
+	MinValue       int    `json:"mdv"`  // Min default value
+	MaxValue       int    `json:"mlv"`  // Max limit value
+	IsActive       bool   `json:"in"`   // Is active
 }
 
 type IddaaEventStatistics struct {
@@ -146,6 +151,25 @@ type IddaaMatchEvent struct {
 	Player      string `json:"Player"`
 	Description string `json:"Description"`
 	IsHome      bool   `json:"IsHome"`
+}
+
+// IddaaCompetitionsResponse represents the response from competitions endpoint
+type IddaaCompetitionsResponse struct {
+	IsSuccess bool               `json:"isSuccess"`
+	Data      []IddaaCompetition `json:"data"`
+	Message   string             `json:"message"`
+}
+
+// IddaaCompetition represents a single competition/league from Iddaa
+type IddaaCompetition struct {
+	ID        int    `json:"i"`    // Competition ID
+	CountryID string `json:"cid"`  // Country code
+	Priority  int    `json:"p"`    // Priority
+	IconURL   string `json:"ic"`   // Icon URL
+	ShortName string `json:"sn"`   // Short name
+	SportID   string `json:"si"`   // Sport ID
+	Name      string `json:"n"`    // Full name
+	Reference int    `json:"cref"` // Reference ID
 }
 
 type IddaaSingleEventResponse struct {
