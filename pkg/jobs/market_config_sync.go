@@ -2,8 +2,9 @@ package jobs
 
 import (
 	"context"
-	"log"
+	"time"
 
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
 
@@ -22,14 +23,25 @@ func (j *MarketConfigSyncJob) Name() string {
 }
 
 func (j *MarketConfigSyncJob) Execute(ctx context.Context) error {
-	log.Printf("Starting market config sync job...")
+	log := logger.WithContext(ctx, "market-config-sync")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "sync_start").
+		Msg("Starting market config sync job")
 
 	err := j.marketConfigService.SyncMarketConfigs(ctx)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("action", "sync_failed").
+			Dur("duration", time.Since(start)).
+			Msg("Market config sync failed")
 		return err
 	}
 
-	log.Printf("Market config sync completed successfully")
+	duration := time.Since(start)
+	log.LogJobComplete("market_config_sync", duration, 1, 0)
 	return nil
 }
 

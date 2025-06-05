@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,18 +19,25 @@ import (
 )
 
 type LeaguesService struct {
-	db          *database.Queries
-	client      *http.Client
-	apiKey      string
-	iddaaClient *IddaaClient
+	db           *database.Queries
+	client       *http.Client
+	apiKey       string
+	iddaaClient  *IddaaClient
+	aiTranslator *AITranslationService
 }
 
-func NewLeaguesService(db *database.Queries, client *http.Client, apiKey string, iddaaClient *IddaaClient) *LeaguesService {
+func NewLeaguesService(db *database.Queries, client *http.Client, apiKey string, iddaaClient *IddaaClient, openaiKey string) *LeaguesService {
+	var aiTranslator *AITranslationService
+	if openaiKey != "" {
+		aiTranslator = NewAITranslationService(openaiKey)
+	}
+
 	return &LeaguesService{
-		db:          db,
-		client:      client,
-		apiKey:      apiKey,
-		iddaaClient: iddaaClient,
+		db:           db,
+		client:       client,
+		apiKey:       apiKey,
+		iddaaClient:  iddaaClient,
+		aiTranslator: aiTranslator,
 	}
 }
 
@@ -165,8 +173,12 @@ func (s *LeaguesService) getUnmappedFootballLeagues(ctx context.Context) ([]data
 func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, internalLeague database.League) (*models.SearchResult, error) {
 	log.Printf("Searching for Football API match for league: %s (Country: %s)", internalLeague.Name, internalLeague.Country.String)
 
-	// Get English translations for the Turkish league name
-	englishNames := s.translateLeagueNameToEnglish(internalLeague.Name)
+	// Get English translations for the Turkish league name using AI or fallback
+	englishNames, err := s.getEnglishTranslations(ctx, internalLeague)
+	if err != nil {
+		log.Printf("Translation failed for %s: %v", internalLeague.Name, err)
+		englishNames = []string{internalLeague.Name} // fallback to original name
+	}
 	allSearchTerms := append([]string{internalLeague.Name}, englishNames...)
 
 	log.Printf("Search terms: %v", allSearchTerms)
@@ -208,10 +220,10 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 			}
 		}
 
-		// Strategy 4: Search by country name
+		// Strategy 4: Search by country name (only if name is >= 3 chars)
 		for _, countryName := range countryNames {
-			if countryName == "" {
-				continue
+			if countryName == "" || len(countryName) < 3 {
+				continue // Skip short country codes
 			}
 			log.Printf("Trying country search for: %s", countryName)
 			if match := s.trySearchMatch(ctx, countryName); match != nil {
@@ -234,8 +246,10 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 
 // tryExactNameMatch attempts exact name matching via Football API
 func (s *LeaguesService) tryExactNameMatch(ctx context.Context, leagueName string) *models.SearchResult {
-	url := fmt.Sprintf("https://v3.football.api-sports.io/leagues?name=%s", leagueName)
-	leagues := s.fetchFromFootballAPI(ctx, url)
+	// URL encode the league name
+	encodedName := url.QueryEscape(leagueName)
+	apiURL := fmt.Sprintf("https://v3.football.api-sports.io/leagues?name=%s", encodedName)
+	leagues := s.fetchFromFootballAPI(ctx, apiURL)
 
 	for _, league := range leagues {
 		if s.normalizeString(league.Name) == s.normalizeString(leagueName) {
@@ -247,8 +261,16 @@ func (s *LeaguesService) tryExactNameMatch(ctx context.Context, leagueName strin
 
 // trySearchMatch attempts search-based matching via Football API
 func (s *LeaguesService) trySearchMatch(ctx context.Context, searchTerm string) *models.SearchResult {
-	url := fmt.Sprintf("https://v3.football.api-sports.io/leagues?search=%s", searchTerm)
-	leagues := s.fetchFromFootballAPI(ctx, url)
+	// Football API requires search term to be at least 3 characters
+	if len(searchTerm) < 3 {
+		log.Printf("Search term '%s' too short for Football API (min 3 chars)", searchTerm)
+		return nil
+	}
+
+	// URL encode the search term
+	encodedTerm := url.QueryEscape(searchTerm)
+	apiURL := fmt.Sprintf("https://v3.football.api-sports.io/leagues?search=%s", encodedTerm)
+	leagues := s.fetchFromFootballAPI(ctx, apiURL)
 
 	var bestMatch *models.SearchResult
 	maxSimilarity := 0.0
@@ -270,8 +292,10 @@ func (s *LeaguesService) trySearchMatch(ctx context.Context, searchTerm string) 
 
 // tryCountryMatch attempts country-based matching
 func (s *LeaguesService) tryCountryMatch(ctx context.Context, internalLeague database.League, countryName string) *models.SearchResult {
-	url := fmt.Sprintf("https://v3.football.api-sports.io/leagues?country=%s", countryName)
-	leagues := s.fetchFromFootballAPI(ctx, url)
+	// URL encode the country name
+	encodedCountry := url.QueryEscape(countryName)
+	apiURL := fmt.Sprintf("https://v3.football.api-sports.io/leagues?country=%s", encodedCountry)
+	leagues := s.fetchFromFootballAPI(ctx, apiURL)
 
 	var bestMatch *models.SearchResult
 	maxSimilarity := 0.0
@@ -293,9 +317,9 @@ func (s *LeaguesService) tryCountryMatch(ctx context.Context, internalLeague dat
 
 // tryFallbackMatch uses the original similarity-based approach with recent leagues
 func (s *LeaguesService) tryFallbackMatch(ctx context.Context, internalLeague database.League) (*models.SearchResult, error) {
-	// Fetch recent leagues as fallback
-	url := "https://v3.football.api-sports.io/leagues?last=99&current=true"
-	leagues := s.fetchFromFootballAPI(ctx, url)
+	// Fetch current active leagues as fallback (as per API docs recommendation)
+	apiURL := "https://v3.football.api-sports.io/leagues?current=true"
+	leagues := s.fetchFromFootballAPI(ctx, apiURL)
 
 	return s.findBestLeagueMatch(internalLeague, leagues), nil
 }
@@ -326,6 +350,19 @@ func (s *LeaguesService) fetchFromFootballAPI(ctx context.Context, url string) [
 	var apiResponse models.FootballAPILeaguesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
 		log.Printf("Failed to decode response from %s: %v", url, err)
+		return nil
+	}
+
+	// Check for API errors
+	if apiResponse.HasErrors() {
+		errorMessages := apiResponse.GetErrorMessages()
+		log.Printf("Football API returned errors for %s: %v", url, errorMessages)
+		return nil
+	}
+
+	// Check if we have valid results
+	if apiResponse.Results == 0 || len(apiResponse.Response) == 0 {
+		log.Printf("No results returned from Football API for %s", url)
 		return nil
 	}
 
@@ -366,8 +403,23 @@ func (s *LeaguesService) isLeagueNameSimilar(name1, name2 string) bool {
 	return s.calculateLeagueNameSimilarity(name1, name2) >= 0.6
 }
 
-// translateLeagueNameToEnglish converts Turkish league names to English equivalents
-func (s *LeaguesService) translateLeagueNameToEnglish(turkishName string) []string {
+// getEnglishTranslations gets English translations using AI or fallback to static
+func (s *LeaguesService) getEnglishTranslations(ctx context.Context, league database.League) ([]string, error) {
+	// Use AI translation if available
+	if s.aiTranslator != nil {
+		country := ""
+		if league.Country.Valid {
+			country = league.Country.String
+		}
+		return s.aiTranslator.TranslateLeagueName(ctx, league.Name, country)
+	}
+
+	// Fallback to static translation
+	return s.translateLeagueNameToEnglishStatic(league.Name), nil
+}
+
+// translateLeagueNameToEnglishStatic converts Turkish league names to English equivalents (static fallback)
+func (s *LeaguesService) translateLeagueNameToEnglishStatic(turkishName string) []string {
 	// Normalize the input for comparison
 	normalized := s.normalizeString(turkishName)
 
@@ -502,52 +554,110 @@ func (s *LeaguesService) translateCountryNameToEnglish(turkishCountry string) st
 	normalized := s.normalizeString(turkishCountry)
 
 	countryTranslations := map[string]string{
+		// European countries - use full names for Football API
 		"turkiye":         "Turkey",
+		"tr":              "Turkey",
 		"ingiltere":       "England",
+		"gb":              "England",
+		"gb-eng":          "England",
 		"ispanya":         "Spain",
+		"es":              "Spain",
 		"italya":          "Italy",
+		"it":              "Italy",
 		"almanya":         "Germany",
+		"de":              "Germany",
 		"fransa":          "France",
+		"fr":              "France",
 		"hollanda":        "Netherlands",
+		"nl":              "Netherlands",
 		"portekiz":        "Portugal",
+		"pt":              "Portugal",
 		"belcika":         "Belgium",
+		"be":              "Belgium",
 		"rusya":           "Russia",
+		"ru":              "Russia",
 		"ukrayna":         "Ukraine",
+		"ua":              "Ukraine",
 		"avusturya":       "Austria",
+		"at":              "Austria",
 		"isvicre":         "Switzerland",
+		"ch":              "Switzerland",
 		"norves":          "Norway",
+		"no":              "Norway",
 		"isvec":           "Sweden",
+		"se":              "Sweden",
 		"danimarka":       "Denmark",
+		"dk":              "Denmark",
 		"finlandiya":      "Finland",
+		"fi":              "Finland",
 		"polonya":         "Poland",
+		"pl":              "Poland",
 		"cek cumhuriyeti": "Czech Republic",
+		"cz":              "Czech Republic",
 		"macaristan":      "Hungary",
+		"hu":              "Hungary",
 		"romanya":         "Romania",
+		"ro":              "Romania",
 		"bulgaristan":     "Bulgaria",
+		"bg":              "Bulgaria",
 		"hirvatistan":     "Croatia",
+		"hr":              "Croatia",
 		"slovenya":        "Slovenia",
+		"si":              "Slovenia",
 		"slovakya":        "Slovakia",
-		"brezilya":        "Brazil",
-		"arjantin":        "Argentina",
-		"kolombiya":       "Colombia",
-		"sili":            "Chile",
-		"meksika":         "Mexico",
-		"abd":             "United States",
-		"kanada":          "Canada",
-		"japonya":         "Japan",
-		"guney kore":      "South Korea",
-		"cin":             "China",
-		"avustralya":      "Australia",
-		"yeni zelanda":    "New Zealand",
-		"misir":           "Egypt",
-		"fas":             "Morocco",
-		"cezayir":         "Algeria",
-		"tunus":           "Tunisia",
-		"nijerya":         "Nigeria",
-		"gana":            "Ghana",
-		"kamerun":         "Cameroon",
-		"senegal":         "Senegal",
-		"guney afrika":    "South Africa",
+		"sk":              "Slovakia",
+
+		// Americas
+		"brezilya":  "Brazil",
+		"br":        "Brazil",
+		"arjantin":  "Argentina",
+		"ar":        "Argentina",
+		"kolombiya": "Colombia",
+		"co":        "Colombia",
+		"sili":      "Chile",
+		"cl":        "Chile",
+		"meksika":   "Mexico",
+		"mx":        "Mexico",
+		"abd":       "United States",
+		"us":        "United States",
+		"kanada":    "Canada",
+		"ca":        "Canada",
+
+		// Asia & Oceania
+		"japonya":      "Japan",
+		"jp":           "Japan",
+		"guney kore":   "South Korea",
+		"kr":           "South Korea",
+		"cin":          "China",
+		"cn":           "China",
+		"avustralya":   "Australia",
+		"au":           "Australia",
+		"yeni zelanda": "New Zealand",
+		"nz":           "New Zealand",
+
+		// Africa
+		"misir":        "Egypt",
+		"eg":           "Egypt",
+		"fas":          "Morocco",
+		"ma":           "Morocco",
+		"cezayir":      "Algeria",
+		"dz":           "Algeria",
+		"tunus":        "Tunisia",
+		"tn":           "Tunisia",
+		"nijerya":      "Nigeria",
+		"ng":           "Nigeria",
+		"gana":         "Ghana",
+		"gh":           "Ghana",
+		"kamerun":      "Cameroon",
+		"cm":           "Cameroon",
+		"senegal":      "Senegal",
+		"sn":           "Senegal",
+		"guney afrika": "South Africa",
+		"za":           "South Africa",
+
+		// International
+		"int":           "World",
+		"international": "World",
 	}
 
 	if english, exists := countryTranslations[normalized]; exists {
@@ -759,7 +869,7 @@ func (s *LeaguesService) levenshteinDistance(s1, s2 string) int {
 				cost = 1
 			}
 
-			matrix[i][j] = min(
+			matrix[i][j] = min3(
 				matrix[i-1][j]+1,      // deletion
 				matrix[i][j-1]+1,      // insertion
 				matrix[i-1][j-1]+cost, // substitution
@@ -770,8 +880,8 @@ func (s *LeaguesService) levenshteinDistance(s1, s2 string) int {
 	return matrix[len(s1)][len(s2)]
 }
 
-// min returns the minimum of three integers
-func min(a, b, c int) int {
+// min3 returns the minimum of three integers
+func min3(a, b, c int) int {
 	if a < b && a < c {
 		return a
 	}
@@ -885,6 +995,18 @@ func (s *LeaguesService) fetchFootballAPITeams(ctx context.Context, leagueID int
 	var apiResponse models.FootballAPITeamsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
 		return nil, err
+	}
+
+	// Check for API errors
+	if apiResponse.HasErrors() {
+		errorMessages := apiResponse.GetErrorMessages()
+		return nil, fmt.Errorf("football API returned errors: %v", errorMessages)
+	}
+
+	// Check if we have valid results
+	if apiResponse.Results == 0 || len(apiResponse.Response) == 0 {
+		log.Printf("No team results returned from Football API for league %d", leagueID)
+		return nil, nil
 	}
 
 	// Convert to SearchResult format

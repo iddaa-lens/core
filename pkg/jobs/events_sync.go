@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"time"
 
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/models"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
@@ -27,7 +28,12 @@ func (j *EventsSyncJob) Name() string {
 }
 
 func (j *EventsSyncJob) Execute(ctx context.Context) error {
-	log.Printf("Starting events sync job...")
+	log := logger.WithContext(ctx, "events-sync")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "sync_start").
+		Msg("Starting events sync job")
 
 	// Fetch all active sports from database
 	sports, err := j.eventsService.GetActiveSports(ctx)
@@ -36,44 +42,82 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 	}
 
 	if len(sports) == 0 {
-		log.Printf("No active sports found in database")
+		log.Warn().
+			Str("action", "no_sports").
+			Msg("No active sports found in database")
 		return nil
 	}
 
-	log.Printf("Found %d active sports to sync events for", len(sports))
+	log.Info().
+		Str("action", "sports_fetched").
+		Int("sport_count", len(sports)).
+		Msg("Found active sports to sync")
+
 	totalEvents := 0
+	errorCount := 0
 
 	for _, sport := range sports {
-		log.Printf("Fetching events for sport %s (ID: %d)...", sport.Name, sport.ID)
+		sportStart := time.Now()
+		log.Debug().
+			Str("action", "sport_sync_start").
+			Str("sport_name", sport.Name).
+			Int("sport_id", int(sport.ID)).
+			Msg("Fetching events for sport")
 
 		// Fetch events from iddaa API for this sport
 		url := fmt.Sprintf("https://sportsbookv2.iddaa.com/sportsbook/events?st=%d&type=0&version=0", sport.ID)
 
 		data, err := j.iddaaClient.FetchData(url)
 		if err != nil {
-			log.Printf("Failed to fetch events for sport %s (ID: %d): %v", sport.Name, sport.ID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Str("action", "fetch_failed").
+				Str("sport_name", sport.Name).
+				Int("sport_id", int(sport.ID)).
+				Str("url", url).
+				Msg("Failed to fetch events")
 			continue // Continue with other sports
 		}
 
 		// Parse the response
 		var response models.IddaaEventsResponse
 		if err := json.Unmarshal(data, &response); err != nil {
-			log.Printf("Failed to unmarshal events response for sport %s (ID: %d): %v", sport.Name, sport.ID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Str("action", "unmarshal_failed").
+				Str("sport_name", sport.Name).
+				Int("sport_id", int(sport.ID)).
+				Msg("Failed to unmarshal events response")
 			continue // Continue with other sports
 		}
 
 		// Process and store the events
 		if err := j.eventsService.ProcessEventsResponse(ctx, &response); err != nil {
-			log.Printf("Failed to process events response for sport %s (ID: %d): %v", sport.Name, sport.ID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Str("action", "process_failed").
+				Str("sport_name", sport.Name).
+				Int("sport_id", int(sport.ID)).
+				Msg("Failed to process events response")
 			continue // Continue with other sports
 		}
 
 		eventCount := len(response.Data.Events)
 		totalEvents += eventCount
-		log.Printf("Processed %d events for sport %s (ID: %d)", eventCount, sport.Name, sport.ID)
+		log.Info().
+			Str("action", "sport_sync_complete").
+			Str("sport_name", sport.Name).
+			Int("sport_id", int(sport.ID)).
+			Int("event_count", eventCount).
+			Dur("duration", time.Since(sportStart)).
+			Msg("Processed events for sport")
 	}
 
-	log.Printf("Events sync completed successfully. Total processed: %d events", totalEvents)
+	duration := time.Since(start)
+	log.LogJobComplete("events_sync", duration, totalEvents, errorCount)
 	return nil
 }
 

@@ -72,15 +72,14 @@ func TestIddaaAPIResponse_Unmarshal(t *testing.T) {
 func TestIddaaEvent_Unmarshal(t *testing.T) {
 	jsonData := `{
 		"i": 123,
-		"cid": 456,
-		"d": "2024-01-01",
-		"t": "20:00",
-		"ht": "Team A",
-		"at": "Team B",
-		"s": "scheduled",
-		"hs": 2,
-		"as": 1,
-		"mr": 90
+		"ci": 456,
+		"d": 1704141600000,
+		"hn": "Team A",
+		"an": "Team B",
+		"s": 1,
+		"sid": 1,
+		"bri": 100,
+		"v": 1
 	}`
 
 	var event IddaaEvent
@@ -114,11 +113,10 @@ func TestIddaaEvent_UnmarshalWithNulls(t *testing.T) {
 	jsonData := `{
 		"i": 123,
 		"cid": 456,
-		"d": "2024-01-01",
-		"t": "20:00",
+		"d": 1704141600000,
 		"ht": "Team A",
 		"at": "Team B",
-		"s": "scheduled"
+		"s": 1
 	}`
 
 	var event IddaaEvent

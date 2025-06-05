@@ -18,14 +18,31 @@ INSERT INTO odds_history (
     outcome, 
     odds_value, 
     previous_value,
-    winning_odds
+    winning_odds,
+    change_amount,
+    change_percentage,
+    multiplier
 ) VALUES (
     $1, 
     $2, 
     $3, 
     $4, 
     $5,
-    $6
+    $6,
+    -- Calculate change amount: new_odds - previous_odds
+    $4::numeric - $5::numeric,
+    -- Calculate change percentage: ((new_odds - previous_odds) / previous_odds) * 100
+    CASE 
+        WHEN $5::numeric > 0 THEN 
+            ROUND((($4::numeric - $5::numeric) / $5::numeric * 100), 2)
+        ELSE 0 
+    END,
+    -- Calculate multiplier: new_odds / previous_odds
+    CASE 
+        WHEN $5::numeric > 0 THEN 
+            ROUND(($4::numeric / $5::numeric), 3)
+        ELSE 1 
+    END
 )
 RETURNING id, event_id, market_type_id, outcome, odds_value, previous_value, winning_odds, change_amount, change_percentage, multiplier, recorded_at
 `
@@ -332,7 +349,9 @@ INSERT INTO current_odds (
     opening_value, 
     highest_value, 
     lowest_value,
-    winning_odds
+    winning_odds,
+    total_movement,
+    movement_percentage
 ) VALUES (
     $1, 
     $2, 
@@ -341,13 +360,23 @@ INSERT INTO current_odds (
     $5, 
     $6, 
     $7,
-    $8
+    $8,
+    0, -- First time, no movement
+    0  -- First time, no movement percentage
 )
 ON CONFLICT (event_id, market_type_id, outcome) DO UPDATE SET
     odds_value = EXCLUDED.odds_value,
     winning_odds = EXCLUDED.winning_odds,
     highest_value = GREATEST(current_odds.highest_value, EXCLUDED.odds_value),
     lowest_value = LEAST(current_odds.lowest_value, EXCLUDED.odds_value),
+    -- Calculate movement: new_odds - opening_odds
+    total_movement = EXCLUDED.odds_value - current_odds.opening_value,
+    -- Calculate movement percentage: ((new_odds - opening_odds) / opening_odds) * 100
+    movement_percentage = CASE 
+        WHEN current_odds.opening_value > 0 THEN 
+            ROUND(((EXCLUDED.odds_value - current_odds.opening_value) / current_odds.opening_value * 100)::numeric, 2)
+        ELSE 0 
+    END,
     last_updated = CURRENT_TIMESTAMP
 RETURNING id, event_id, market_type_id, outcome, odds_value, opening_value, highest_value, lowest_value, winning_odds, total_movement, movement_percentage, last_updated
 `

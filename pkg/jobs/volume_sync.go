@@ -3,9 +3,10 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"log"
+	"time"
 
 	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
 
@@ -26,7 +27,12 @@ func (j *VolumeSyncJob) Name() string {
 }
 
 func (j *VolumeSyncJob) Execute(ctx context.Context) error {
-	log.Printf("Starting volume sync job...")
+	log := logger.WithContext(ctx, "volume-sync")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "sync_start").
+		Msg("Starting volume sync job")
 
 	// Fetch all active sports from database
 	sports, err := j.db.ListSports(ctx)
@@ -35,27 +41,52 @@ func (j *VolumeSyncJob) Execute(ctx context.Context) error {
 	}
 
 	if len(sports) == 0 {
-		log.Printf("No active sports found in database")
+		log.Warn().
+			Str("action", "no_sports").
+			Msg("No active sports found in database")
 		return nil
 	}
 
-	log.Printf("Found %d active sports to sync volume data for", len(sports))
+	log.Info().
+		Str("action", "sports_fetched").
+		Int("sport_count", len(sports)).
+		Msg("Found active sports to sync")
+
 	totalProcessed := 0
+	errorCount := 0
 
 	for _, sport := range sports {
-		log.Printf("Fetching volume data for sport %s (ID: %d)...", sport.Name, sport.ID)
+		sportStart := time.Now()
+		log.Debug().
+			Str("action", "sport_sync_start").
+			Str("sport_name", sport.Name).
+			Int("sport_id", int(sport.ID)).
+			Msg("Fetching volume data for sport")
 
 		err := j.volumeService.FetchAndUpdateVolumes(ctx, int(sport.ID))
 		if err != nil {
-			log.Printf("Failed to fetch volume data for sport %s (ID: %d): %v", sport.Name, sport.ID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Str("action", "sport_sync_failed").
+				Str("sport_name", sport.Name).
+				Int("sport_id", int(sport.ID)).
+				Dur("duration", time.Since(sportStart)).
+				Msg("Failed to fetch volume data")
 			continue // Continue with other sports
 		}
 
-		log.Printf("Volume sync completed for sport %s (ID: %d)", sport.Name, sport.ID)
+		log.Debug().
+			Str("action", "sport_sync_complete").
+			Str("sport_name", sport.Name).
+			Int("sport_id", int(sport.ID)).
+			Dur("duration", time.Since(sportStart)).
+			Msg("Volume sync completed for sport")
 		totalProcessed++
 	}
 
-	log.Printf("Volume sync completed successfully for %d/%d sports", totalProcessed, len(sports))
+	duration := time.Since(start)
+	log.LogJobComplete("volume_sync", duration, totalProcessed, errorCount)
 	return nil
 }
 

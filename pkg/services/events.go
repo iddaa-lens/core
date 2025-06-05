@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/models"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -18,6 +19,7 @@ type EventsService struct {
 	client      *IddaaClient
 	rateLimiter *time.Ticker
 	mutex       sync.Mutex
+	logger      *logger.Logger
 }
 
 func NewEventsService(db *database.Queries, client *IddaaClient) *EventsService {
@@ -25,6 +27,7 @@ func NewEventsService(db *database.Queries, client *IddaaClient) *EventsService 
 		db:          db,
 		client:      client,
 		rateLimiter: time.NewTicker(100 * time.Millisecond), // Max 10 requests per second
+		logger:      logger.New("events-service"),
 	}
 }
 
@@ -58,7 +61,7 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 		// Convert status to string
 		statusStr := s.convertEventStatus(event.Status)
 
-		// Upsert event
+		// Upsert event with all Iddaa fields
 		eventRecord, err := s.db.UpsertEvent(ctx, database.UpsertEventParams{
 			ExternalID: strconv.Itoa(event.ID),
 			LeagueID:   pgtype.Int4{Int32: int32(competitionID), Valid: competitionID > 0},
@@ -68,22 +71,34 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 			Status:     statusStr,
 			HomeScore:  pgtype.Int4{Valid: false},
 			AwayScore:  pgtype.Int4{Valid: false},
+			BulletinID: pgtype.Int8{Int64: int64(event.BulletinID), Valid: true},
+			Version:    pgtype.Int8{Int64: int64(event.Version), Valid: true},
+			SportID:    pgtype.Int4{Int32: int32(event.SportID), Valid: true},
+			BetProgram: pgtype.Int4{Int32: int32(event.BetProgram), Valid: true},
+			Mbc:        pgtype.Int4{Int32: int32(event.MBC), Valid: true},
+			HasKingOdd: pgtype.Bool{Bool: event.HasKingOdd, Valid: true},
+			OddsCount:  pgtype.Int4{Int32: int32(event.OddsCount), Valid: true},
+			HasCombine: pgtype.Bool{Bool: event.HasCombine, Valid: true},
+			IsLive:     pgtype.Bool{Bool: event.IsLive, Valid: true},
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upsert event %d: %w", event.ID, err)
 		}
 
-		// Process markets and odds from bulk response first
-		err = s.processMarkets(ctx, int(eventRecord.ID), event.Markets, time.Now())
-		if err != nil {
-			return fmt.Errorf("failed to process markets for event %d: %w", event.ID, err)
-		}
-
-		// Fetch detailed odds for this specific event
+		// Skip bulk markets processing - use detailed endpoint only for better accuracy
+		// Process detailed odds for this specific event (more comprehensive than bulk)
 		err = s.fetchAndProcessDetailedOdds(ctx, int(eventRecord.ID), event.ID)
 		if err != nil {
-			// Log error but continue with other events
-			fmt.Printf("Failed to fetch detailed odds for event %d: %v\n", event.ID, err)
+			// Fallback to bulk markets if detailed fetch fails
+			s.logger.Warn().
+				Err(err).
+				Int("event_id", event.ID).
+				Str("action", "fallback_to_bulk").
+				Msg("Failed to fetch detailed odds, using bulk markets")
+			err = s.processMarkets(ctx, int(eventRecord.ID), event.Markets, time.Now())
+			if err != nil {
+				return fmt.Errorf("failed to process fallback markets for event %d: %w", event.ID, err)
+			}
 		}
 	}
 
@@ -154,7 +169,7 @@ func (s *EventsService) getCompetitionID(ctx context.Context, iddaaCompetitionID
 }
 
 // processMarkets processes all markets and their odds for an event
-func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets []models.IddaaMarket, recordedAt time.Time) error {
+func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets []models.IddaaMarket, _ time.Time) error {
 	for _, market := range markets {
 		// Convert market subtype to market type code
 		marketTypeCode := s.convertMarketSubType(market.SubType)
@@ -174,7 +189,12 @@ func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets
 			// Use the outcome name with special value if applicable
 			outcomeStr := outcome.Name
 			if market.SpecialValue != "" {
-				outcomeStr = fmt.Sprintf("%s %s", outcome.Name, market.SpecialValue)
+				// For Over/Under markets, include the special value for clarity
+				if market.SubType == 60 || market.SubType == 101 || market.SubType == 603 || market.SubType == 604 {
+					outcomeStr = fmt.Sprintf("%s %s", outcome.Name, market.SpecialValue)
+				} else {
+					outcomeStr = fmt.Sprintf("%s (%s)", outcome.Name, market.SpecialValue)
+				}
 			}
 
 			// Check if we need to store this odds value
@@ -206,19 +226,67 @@ func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets
 				winningOddsNumeric.Valid = false
 			}
 
+			// Get current odds to preserve opening value and detect changes
+			currentOdds, err := s.db.GetCurrentOddsByMarket(ctx, database.GetCurrentOddsByMarketParams{
+				EventID:      pgtype.Int4{Int32: int32(eventID), Valid: true},
+				MarketTypeID: pgtype.Int4{Int32: marketType.ID, Valid: true},
+			})
+			if err != nil && err.Error() != "no rows in result set" {
+				return fmt.Errorf("failed to get current odds: %w", err)
+			}
+
+			var openingValue pgtype.Numeric
+			var previousValue pgtype.Numeric
+			hasExistingOdds := false
+
+			// Check if we have existing odds for this specific outcome
+			for _, existing := range currentOdds {
+				if existing.Outcome == outcomeStr {
+					hasExistingOdds = true
+					openingValue = existing.OpeningValue // Preserve original opening value
+					previousValue = existing.OddsValue   // Store current as previous
+					break
+				}
+			}
+
+			if !hasExistingOdds {
+				// First time seeing this odds, set opening value
+				openingValue = oddsNumeric
+				previousValue.Valid = false
+			}
+
 			_, err = s.db.UpsertCurrentOdds(ctx, database.UpsertCurrentOddsParams{
 				EventID:      pgtype.Int4{Int32: int32(eventID), Valid: true},
 				MarketTypeID: pgtype.Int4{Int32: marketType.ID, Valid: true},
 				Outcome:      outcomeStr,
 				OddsValue:    oddsNumeric,
-				OpeningValue: oddsNumeric, // Use same value as opening for first time
+				OpeningValue: openingValue, // Preserve original opening value
 				HighestValue: oddsNumeric,
 				LowestValue:  oddsNumeric,
 				WinningOdds:  winningOddsNumeric,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to create odds for event %d, market %d, outcome %s: %w",
+				return fmt.Errorf("failed to upsert odds for event %d, market %d, outcome %s: %w",
 					eventID, marketType.ID, outcomeStr, err)
+			}
+
+			// If odds changed, create history record
+			if hasExistingOdds && previousValue.Valid {
+				prevFloat, _ := previousValue.Float64Value()
+				if prevFloat.Valid && math.Abs(prevFloat.Float64-outcome.Odds) > 0.001 {
+					_, err = s.db.CreateOddsHistory(ctx, database.CreateOddsHistoryParams{
+						EventID:       pgtype.Int4{Int32: int32(eventID), Valid: true},
+						MarketTypeID:  pgtype.Int4{Int32: marketType.ID, Valid: true},
+						Outcome:       outcomeStr,
+						OddsValue:     oddsNumeric,
+						PreviousValue: previousValue,
+						WinningOdds:   winningOddsNumeric,
+					})
+					if err != nil {
+						return fmt.Errorf("failed to create odds history for event %d, market %d, outcome %s: %w",
+							eventID, marketType.ID, outcomeStr, err)
+					}
+				}
 			}
 		}
 	}
@@ -362,4 +430,93 @@ func (s *EventsService) GetActiveSports(ctx context.Context) ([]database.Sport, 
 		return nil, fmt.Errorf("failed to list sports: %w", err)
 	}
 	return sports, nil
+}
+
+// ProcessDetailedMarkets processes detailed markets from the single event endpoint
+func (s *EventsService) ProcessDetailedMarkets(ctx context.Context, eventID int, markets []models.IddaaDetailedMarket, timestamp time.Time) error {
+	for _, market := range markets {
+		// Convert detailed market to standard market format for processing
+		standardMarket := models.IddaaMarket{
+			ID:           market.ID,
+			Type:         market.Type,
+			SubType:      market.SubType,
+			SpecialValue: market.SpecialValue,
+			Outcomes:     make([]models.IddaaOutcome, len(market.Outcomes)),
+		}
+
+		// Convert detailed outcomes to standard outcomes
+		for i, outcome := range market.Outcomes {
+			standardMarket.Outcomes[i] = models.IddaaOutcome{
+				Number: outcome.Number,
+				Odds:   outcome.Odds,
+				Name:   outcome.Name,
+			}
+		}
+
+		// Process using existing market processing logic
+		err := s.processSingleMarket(ctx, eventID, standardMarket, timestamp)
+		if err != nil {
+			// Log error but continue processing other markets
+			fmt.Printf("Failed to process detailed market %d for event %d: %v\n", market.ID, eventID, err)
+		}
+	}
+	return nil
+}
+
+// processSingleMarket processes a single market (extracted from processMarkets for reuse)
+func (s *EventsService) processSingleMarket(ctx context.Context, eventID int, market models.IddaaMarket, timestamp time.Time) error {
+	// Create market type code similar to existing logic
+	marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
+
+	// Upsert market type
+	marketType, err := s.db.UpsertMarketType(ctx, database.UpsertMarketTypeParams{
+		Code:        marketTypeCode,
+		Name:        s.getMarketTypeName(market.SubType),
+		Description: pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upsert market type %s: %w", marketTypeCode, err)
+	}
+
+	// Process each outcome
+	for _, outcome := range market.Outcomes {
+		outcomeName := outcome.Name
+		if market.SpecialValue != "" {
+			// Format outcome name with special value for better readability
+			if market.SubType == 60 || market.SubType == 101 || market.SubType == 603 || market.SubType == 604 {
+				// For Over/Under markets, integrate special value naturally
+				outcomeName = fmt.Sprintf("%s %s", outcome.Name, market.SpecialValue)
+			} else {
+				// For other markets, append in parentheses
+				outcomeName = fmt.Sprintf("%s (%s)", outcome.Name, market.SpecialValue)
+			}
+		}
+
+		// Convert odds to pgtype.Numeric
+		oddsNumeric := pgtype.Numeric{}
+		if err := oddsNumeric.Scan(fmt.Sprintf("%.2f", outcome.Odds)); err != nil {
+			return fmt.Errorf("failed to convert odds to numeric: %w", err)
+		}
+
+		// Upsert current odds
+		_, err := s.db.UpsertCurrentOdds(ctx, database.UpsertCurrentOddsParams{
+			EventID:      pgtype.Int4{Int32: int32(eventID), Valid: true},
+			MarketTypeID: pgtype.Int4{Int32: marketType.ID, Valid: true},
+			Outcome:      outcomeName,
+			OddsValue:    oddsNumeric,
+			OpeningValue: oddsNumeric, // Use current as opening if this is first time
+			HighestValue: oddsNumeric,
+			LowestValue:  oddsNumeric,
+			WinningOdds:  oddsNumeric,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to upsert current odds: %w", err)
+		}
+
+		// Don't create odds history here - it should only be created when odds actually change
+		// This function is called for initial odds sync from ProcessDetailedMarkets
+		// The processMarkets function handles proper odds history creation with change detection
+	}
+
+	return nil
 }

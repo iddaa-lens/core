@@ -56,7 +56,7 @@ func (s *DistributionService) FetchAndUpdateDistributions(ctx context.Context, s
 		}
 
 		// Check if event exists in our database
-		event, err := s.db.GetEventByExternalID(ctx, eventIDStr)
+		event, err := s.db.GetEventByExternalIDSimple(ctx, eventIDStr)
 		if err != nil {
 			// Event not found, skip
 			continue
@@ -98,7 +98,7 @@ func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eve
 		currentFloat, _ := current.BetPercentage.Float64Value()
 		previousPercentage = pgtype.Numeric{}
 		prevStr := fmt.Sprintf("%.2f", currentFloat.Float64)
-		if err := previousPercentage.ScanScientific(prevStr); err != nil {
+		if err := previousPercentage.Scan(prevStr); err != nil {
 			return fmt.Errorf("failed to convert previous percentage %.2f: %w", currentFloat.Float64, err)
 		}
 
@@ -106,7 +106,7 @@ func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eve
 		if currentFloat.Float64 != percentage {
 			newPercentageHist := pgtype.Numeric{}
 			newStr := fmt.Sprintf("%.2f", percentage)
-			if err := newPercentageHist.ScanScientific(newStr); err != nil {
+			if err := newPercentageHist.Scan(newStr); err != nil {
 				return fmt.Errorf("failed to convert new percentage %.2f: %w", percentage, err)
 			}
 
@@ -132,7 +132,7 @@ func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eve
 	// Upsert the distribution
 	newPercentage := pgtype.Numeric{}
 	percentageStr := fmt.Sprintf("%.2f", percentage)
-	if err := newPercentage.ScanScientific(percentageStr); err != nil {
+	if err := newPercentage.Scan(percentageStr); err != nil {
 		return fmt.Errorf("failed to convert percentage %.2f: %w", percentage, err)
 	}
 
@@ -171,7 +171,7 @@ func (s *DistributionService) getImpliedProbability(ctx context.Context, eventID
 	impliedProb := (1.0 / oddsFloat.Float64) * 100
 	result := pgtype.Numeric{}
 	impliedStr := fmt.Sprintf("%.2f", impliedProb)
-	if err := result.ScanScientific(impliedStr); err != nil {
+	if err := result.Scan(impliedStr); err != nil {
 		return pgtype.Numeric{Valid: false}, fmt.Errorf("failed to convert implied probability %.2f: %w", impliedProb, err)
 	}
 	return result, nil

@@ -3,44 +3,76 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 
-	"github.com/betslib/iddaa-core/pkg/database"
-	"github.com/betslib/iddaa-core/pkg/models"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/betslib/iddaa-core/pkg/logger"
+	"github.com/betslib/iddaa-core/pkg/models"
 )
 
 type StatisticsService struct {
 	db     *database.Queries
 	client *IddaaClient
+	logger *logger.Logger
 }
 
 func NewStatisticsService(db *database.Queries, client *IddaaClient) *StatisticsService {
 	return &StatisticsService{
 		db:     db,
 		client: client,
+		logger: logger.New("statistics-service"),
 	}
 }
 
 func (s *StatisticsService) SyncEventStatistics(ctx context.Context, sportID int, searchDate string) error {
-	log.Printf("Starting statistics sync for sport %d, date %s...", sportID, searchDate)
+	log := logger.WithContext(ctx, "statistics-sync")
+
+	log.Info().
+		Int("sport_id", sportID).
+		Str("search_date", searchDate).
+		Str("action", "sync_start").
+		Msg("Starting statistics sync")
 
 	stats, err := s.client.GetEventStatistics(sportID, searchDate)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Int("sport_id", sportID).
+			Str("search_date", searchDate).
+			Str("action", "api_failed").
+			Msg("Failed to fetch event statistics")
 		return fmt.Errorf("failed to fetch event statistics: %w", err)
 	}
 
-	log.Printf("Fetched statistics for %d events", len(stats))
+	log.Info().
+		Int("events_count", len(stats)).
+		Str("action", "api_response").
+		Msg("Fetched statistics from API")
+
+	// Keep track of successes and failures
+	successCount := 0
+	errorCount := 0
 
 	for _, stat := range stats {
 		if err := s.saveEventStatistics(ctx, stat); err != nil {
-			log.Printf("Failed to save statistics for event %d: %v", stat.EventID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Int("event_id", stat.EventID).
+				Str("action", "save_failed").
+				Msg("Failed to save event statistics")
 			continue
 		}
+		successCount++
 	}
 
-	log.Println("Statistics sync completed")
+	log.Info().
+		Int("success_count", successCount).
+		Int("error_count", errorCount).
+		Str("action", "sync_complete").
+		Msg("Statistics sync completed")
 	return nil
 }
 
@@ -49,7 +81,10 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 	event, err := s.db.GetEventByExternalID(ctx, strconv.Itoa(stat.EventID))
 	if err != nil {
 		// Event not found in our database, skip
-		log.Printf("Event %d not found in database, skipping statistics", stat.EventID)
+		s.logger.Debug().
+			Int("event_id", stat.EventID).
+			Str("action", "event_not_found").
+			Msg("Event not found in database, skipping statistics")
 		return nil
 	}
 
@@ -71,7 +106,11 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 	if stat.HasStatistics {
 		err = s.saveMatchStatistics(ctx, event.ID, stat.Statistics)
 		if err != nil {
-			log.Printf("Failed to save match statistics for event %d: %v", stat.EventID, err)
+			s.logger.Error().
+				Err(err).
+				Int("event_id", stat.EventID).
+				Str("action", "match_stats_failed").
+				Msg("Failed to save match statistics")
 		}
 	}
 
@@ -79,7 +118,11 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 	for _, matchEvent := range stat.Events {
 		err = s.saveMatchEvent(ctx, event.ID, matchEvent)
 		if err != nil {
-			log.Printf("Failed to save match event for event %d: %v", stat.EventID, err)
+			s.logger.Error().
+				Err(err).
+				Int("event_id", stat.EventID).
+				Str("action", "match_event_failed").
+				Msg("Failed to save match event")
 		}
 	}
 

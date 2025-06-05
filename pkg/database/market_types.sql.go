@@ -12,7 +12,7 @@ import (
 )
 
 const getMarketType = `-- name: GetMarketType :one
-SELECT id, code, name, slug, description, created_at, updated_at FROM market_types
+SELECT id, code, name, slug, description, iddaa_market_id, is_live, market_type, min_market_default_value, max_market_limit_value, priority, sport_type, market_sub_type, min_default_value, max_limit_value, is_active, created_at, updated_at FROM market_types
 WHERE code = $1 LIMIT 1
 `
 
@@ -25,6 +25,17 @@ func (q *Queries) GetMarketType(ctx context.Context, code string) (MarketType, e
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.IddaaMarketID,
+		&i.IsLive,
+		&i.MarketType,
+		&i.MinMarketDefaultValue,
+		&i.MaxMarketLimitValue,
+		&i.Priority,
+		&i.SportType,
+		&i.MarketSubType,
+		&i.MinDefaultValue,
+		&i.MaxLimitValue,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -32,7 +43,7 @@ func (q *Queries) GetMarketType(ctx context.Context, code string) (MarketType, e
 }
 
 const getMarketTypeByID = `-- name: GetMarketTypeByID :one
-SELECT id, code, name, slug, description, created_at, updated_at FROM market_types
+SELECT id, code, name, slug, description, iddaa_market_id, is_live, market_type, min_market_default_value, max_market_limit_value, priority, sport_type, market_sub_type, min_default_value, max_limit_value, is_active, created_at, updated_at FROM market_types
 WHERE id = $1 LIMIT 1
 `
 
@@ -45,6 +56,17 @@ func (q *Queries) GetMarketTypeByID(ctx context.Context, id int32) (MarketType, 
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.IddaaMarketID,
+		&i.IsLive,
+		&i.MarketType,
+		&i.MinMarketDefaultValue,
+		&i.MaxMarketLimitValue,
+		&i.Priority,
+		&i.SportType,
+		&i.MarketSubType,
+		&i.MinDefaultValue,
+		&i.MaxLimitValue,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -52,7 +74,7 @@ func (q *Queries) GetMarketTypeByID(ctx context.Context, id int32) (MarketType, 
 }
 
 const listMarketTypes = `-- name: ListMarketTypes :many
-SELECT id, code, name, slug, description, created_at, updated_at FROM market_types
+SELECT id, code, name, slug, description, iddaa_market_id, is_live, market_type, min_market_default_value, max_market_limit_value, priority, sport_type, market_sub_type, min_default_value, max_limit_value, is_active, created_at, updated_at FROM market_types
 ORDER BY code
 `
 
@@ -71,6 +93,17 @@ func (q *Queries) ListMarketTypes(ctx context.Context) ([]MarketType, error) {
 			&i.Name,
 			&i.Slug,
 			&i.Description,
+			&i.IddaaMarketID,
+			&i.IsLive,
+			&i.MarketType,
+			&i.MinMarketDefaultValue,
+			&i.MaxMarketLimitValue,
+			&i.Priority,
+			&i.SportType,
+			&i.MarketSubType,
+			&i.MinDefaultValue,
+			&i.MaxLimitValue,
+			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -85,23 +118,66 @@ func (q *Queries) ListMarketTypes(ctx context.Context) ([]MarketType, error) {
 }
 
 const upsertMarketType = `-- name: UpsertMarketType :one
-INSERT INTO market_types (code, name, description)
-VALUES ($1, $2, $3)
+INSERT INTO market_types (code, name, description, iddaa_market_id, is_live, market_type, 
+                         min_market_default_value, max_market_limit_value, priority, sport_type,
+                         market_sub_type, min_default_value, max_limit_value, is_active)
+VALUES ($1, $2, $3, $4,
+        $5, $6, $7,
+        $8, $9, $10,
+        $11, $12, $13,
+        $14)
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
+    iddaa_market_id = EXCLUDED.iddaa_market_id,
+    is_live = EXCLUDED.is_live,
+    market_type = EXCLUDED.market_type,
+    min_market_default_value = EXCLUDED.min_market_default_value,
+    max_market_limit_value = EXCLUDED.max_market_limit_value,
+    priority = EXCLUDED.priority,
+    sport_type = EXCLUDED.sport_type,
+    market_sub_type = EXCLUDED.market_sub_type,
+    min_default_value = EXCLUDED.min_default_value,
+    max_limit_value = EXCLUDED.max_limit_value,
+    is_active = EXCLUDED.is_active,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, code, name, slug, description, created_at, updated_at
+RETURNING id, code, name, slug, description, iddaa_market_id, is_live, market_type, min_market_default_value, max_market_limit_value, priority, sport_type, market_sub_type, min_default_value, max_limit_value, is_active, created_at, updated_at
 `
 
 type UpsertMarketTypeParams struct {
-	Code        string      `db:"code" json:"code"`
-	Name        string      `db:"name" json:"name"`
-	Description pgtype.Text `db:"description" json:"description"`
+	Code                  string      `db:"code" json:"code"`
+	Name                  string      `db:"name" json:"name"`
+	Description           pgtype.Text `db:"description" json:"description"`
+	IddaaMarketID         pgtype.Int4 `db:"iddaa_market_id" json:"iddaa_market_id"`
+	IsLive                pgtype.Bool `db:"is_live" json:"is_live"`
+	MarketType            pgtype.Int4 `db:"market_type" json:"market_type"`
+	MinMarketDefaultValue pgtype.Int4 `db:"min_market_default_value" json:"min_market_default_value"`
+	MaxMarketLimitValue   pgtype.Int4 `db:"max_market_limit_value" json:"max_market_limit_value"`
+	Priority              pgtype.Int4 `db:"priority" json:"priority"`
+	SportType             pgtype.Int4 `db:"sport_type" json:"sport_type"`
+	MarketSubType         pgtype.Int4 `db:"market_sub_type" json:"market_sub_type"`
+	MinDefaultValue       pgtype.Int4 `db:"min_default_value" json:"min_default_value"`
+	MaxLimitValue         pgtype.Int4 `db:"max_limit_value" json:"max_limit_value"`
+	IsActive              pgtype.Bool `db:"is_active" json:"is_active"`
 }
 
 func (q *Queries) UpsertMarketType(ctx context.Context, arg UpsertMarketTypeParams) (MarketType, error) {
-	row := q.db.QueryRow(ctx, upsertMarketType, arg.Code, arg.Name, arg.Description)
+	row := q.db.QueryRow(ctx, upsertMarketType,
+		arg.Code,
+		arg.Name,
+		arg.Description,
+		arg.IddaaMarketID,
+		arg.IsLive,
+		arg.MarketType,
+		arg.MinMarketDefaultValue,
+		arg.MaxMarketLimitValue,
+		arg.Priority,
+		arg.SportType,
+		arg.MarketSubType,
+		arg.MinDefaultValue,
+		arg.MaxLimitValue,
+		arg.IsActive,
+	)
 	var i MarketType
 	err := row.Scan(
 		&i.ID,
@@ -109,6 +185,17 @@ func (q *Queries) UpsertMarketType(ctx context.Context, arg UpsertMarketTypePara
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.IddaaMarketID,
+		&i.IsLive,
+		&i.MarketType,
+		&i.MinMarketDefaultValue,
+		&i.MaxMarketLimitValue,
+		&i.Priority,
+		&i.SportType,
+		&i.MarketSubType,
+		&i.MinDefaultValue,
+		&i.MaxLimitValue,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -122,7 +209,7 @@ ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, code, name, slug, description, created_at, updated_at
+RETURNING id, code, name, slug, description, iddaa_market_id, is_live, market_type, min_market_default_value, max_market_limit_value, priority, sport_type, market_sub_type, min_default_value, max_limit_value, is_active, created_at, updated_at
 `
 
 type UpsertMarketTypeByExternalIDParams struct {
@@ -140,6 +227,17 @@ func (q *Queries) UpsertMarketTypeByExternalID(ctx context.Context, arg UpsertMa
 		&i.Name,
 		&i.Slug,
 		&i.Description,
+		&i.IddaaMarketID,
+		&i.IsLive,
+		&i.MarketType,
+		&i.MinMarketDefaultValue,
+		&i.MaxMarketLimitValue,
+		&i.Priority,
+		&i.SportType,
+		&i.MarketSubType,
+		&i.MinDefaultValue,
+		&i.MaxLimitValue,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

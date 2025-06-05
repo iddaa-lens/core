@@ -88,7 +88,7 @@ func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int
 
 func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume, totalEvents int) error {
 	// First, check if event exists
-	event, err := s.db.GetEventByExternalID(ctx, vol.EventID)
+	event, err := s.db.GetEventByExternalIDSimple(ctx, vol.EventID)
 	if err != nil {
 		return fmt.Errorf("event %s not found: %w", vol.EventID, err)
 	}
@@ -96,7 +96,7 @@ func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume, 
 	// Create volume percentage numeric value
 	var volumePercentageNumeric pgtype.Numeric
 	volumeStr := fmt.Sprintf("%.2f", vol.Percentage)
-	if err := volumePercentageNumeric.ScanScientific(volumeStr); err != nil {
+	if err := volumePercentageNumeric.Scan(volumeStr); err != nil {
 		return fmt.Errorf("failed to convert volume percentage %.2f: %w", vol.Percentage, err)
 	}
 

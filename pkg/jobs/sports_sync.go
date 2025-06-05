@@ -2,7 +2,9 @@ package jobs
 
 import (
 	"context"
+	"time"
 
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
 
@@ -18,7 +20,27 @@ func NewSportsSyncJob(sportsService *services.SportService) Job {
 }
 
 func (j *SportsSyncJob) Execute(ctx context.Context) error {
-	return j.sportsService.SyncSports(ctx)
+	log := logger.WithContext(ctx, "sports-sync")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "sync_start").
+		Msg("Starting sports sync job")
+
+	err := j.sportsService.SyncSports(ctx)
+	duration := time.Since(start)
+
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("action", "sync_failed").
+			Dur("duration", duration).
+			Msg("Sports sync failed")
+		return err
+	}
+
+	log.LogJobComplete("sports_sync", duration, 1, 0)
+	return nil
 }
 
 func (j *SportsSyncJob) Name() string {

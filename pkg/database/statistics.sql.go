@@ -253,7 +253,7 @@ SET
     half = $6,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $7
-RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, created_at, updated_at
+RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type UpdateEventLiveDataParams struct {
@@ -294,6 +294,14 @@ func (q *Queries) UpdateEventLiveData(ctx context.Context, arg UpdateEventLiveDa
 		&i.BettingVolumePercentage,
 		&i.VolumeRank,
 		&i.VolumeUpdatedAt,
+		&i.BulletinID,
+		&i.Version,
+		&i.SportID,
+		&i.BetProgram,
+		&i.Mbc,
+		&i.HasKingOdd,
+		&i.OddsCount,
+		&i.HasCombine,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

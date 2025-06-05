@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS events (
     betting_volume_percentage DECIMAL(5, 2),
     volume_rank INTEGER,
     volume_updated_at TIMESTAMP,
+    -- Additional Iddaa-specific fields
+    bulletin_id BIGINT,                     -- bri: Iddaa bulletin/program ID
+    version BIGINT,                         -- v: Event version for change tracking
+    sport_id INTEGER REFERENCES sports(id), -- sid: Sport ID for validation
+    bet_program INTEGER,                    -- bp: Betting program identifier
+    mbc INTEGER,                           -- mbc: Market betting category
+    has_king_odd BOOLEAN DEFAULT false,     -- kOdd: King odds availability
+    odds_count INTEGER DEFAULT 0,          -- oc: Number of available odds
+    has_combine BOOLEAN DEFAULT false,      -- hc: Combination betting availability
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -73,6 +82,18 @@ CREATE TABLE IF NOT EXISTS market_types (
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE NOT NULL,
     description TEXT,
+    -- Iddaa-specific market configuration fields
+    iddaa_market_id INTEGER,                -- i: Market ID from Iddaa
+    is_live BOOLEAN DEFAULT false,          -- il: Is live market
+    market_type INTEGER,                    -- mt: Market type
+    min_market_default_value INTEGER,       -- mmdv: Min market default value
+    max_market_limit_value INTEGER,         -- mmlv: Max market limit value
+    priority INTEGER DEFAULT 0,            -- p: Priority
+    sport_type INTEGER,                     -- st: Sport type
+    market_sub_type INTEGER,                -- mst: Market sub type
+    min_default_value INTEGER,              -- mdv: Min default value
+    max_limit_value INTEGER,                -- mlv: Max limit value
+    is_active BOOLEAN DEFAULT true,         -- in: Is active
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -263,18 +284,107 @@ CREATE INDEX IF NOT EXISTS idx_team_mappings_internal_team_id ON team_mappings(i
 CREATE INDEX IF NOT EXISTS idx_team_mappings_football_api_team_id ON team_mappings(football_api_team_id);
 CREATE INDEX IF NOT EXISTS idx_team_mappings_confidence ON team_mappings(confidence);
 
+-- Create improved slug normalization function
+-- This matches the gosimple/slug library behavior for consistent results
+CREATE OR REPLACE FUNCTION normalize_slug(input_text TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    normalized_text TEXT;
+BEGIN
+    IF input_text IS NULL OR input_text = '' THEN
+        RETURN '';
+    END IF;
+
+    -- Start with the input text
+    normalized_text := input_text;
+    
+    -- Turkish characters
+    normalized_text := REPLACE(normalized_text, 'ı', 'i');
+    normalized_text := REPLACE(normalized_text, 'İ', 'I');
+    normalized_text := REPLACE(normalized_text, 'ğ', 'g');
+    normalized_text := REPLACE(normalized_text, 'Ğ', 'G');
+    normalized_text := REPLACE(normalized_text, 'ü', 'u');
+    normalized_text := REPLACE(normalized_text, 'Ü', 'U');
+    normalized_text := REPLACE(normalized_text, 'ş', 's');
+    normalized_text := REPLACE(normalized_text, 'Ş', 'S');
+    normalized_text := REPLACE(normalized_text, 'ö', 'o');
+    normalized_text := REPLACE(normalized_text, 'Ö', 'O');
+    normalized_text := REPLACE(normalized_text, 'ç', 'c');
+    normalized_text := REPLACE(normalized_text, 'Ç', 'C');
+    
+    -- German/European characters
+    normalized_text := REPLACE(normalized_text, 'ä', 'a');
+    normalized_text := REPLACE(normalized_text, 'Ä', 'A');
+    normalized_text := REPLACE(normalized_text, 'ß', 'ss');
+    
+    -- Nordic characters
+    normalized_text := REPLACE(normalized_text, 'ø', 'o');
+    normalized_text := REPLACE(normalized_text, 'Ø', 'O');
+    normalized_text := REPLACE(normalized_text, 'å', 'a');
+    normalized_text := REPLACE(normalized_text, 'Å', 'A');
+    normalized_text := REPLACE(normalized_text, 'æ', 'ae');
+    normalized_text := REPLACE(normalized_text, 'Æ', 'AE');
+    
+    -- Spanish/French characters
+    normalized_text := REPLACE(normalized_text, 'ñ', 'n');
+    normalized_text := REPLACE(normalized_text, 'Ñ', 'N');
+    normalized_text := REPLACE(normalized_text, 'é', 'e');
+    normalized_text := REPLACE(normalized_text, 'É', 'E');
+    normalized_text := REPLACE(normalized_text, 'è', 'e');
+    normalized_text := REPLACE(normalized_text, 'È', 'E');
+    normalized_text := REPLACE(normalized_text, 'ê', 'e');
+    normalized_text := REPLACE(normalized_text, 'Ê', 'E');
+    normalized_text := REPLACE(normalized_text, 'ë', 'e');
+    normalized_text := REPLACE(normalized_text, 'Ë', 'E');
+    normalized_text := REPLACE(normalized_text, 'á', 'a');
+    normalized_text := REPLACE(normalized_text, 'Á', 'A');
+    normalized_text := REPLACE(normalized_text, 'à', 'a');
+    normalized_text := REPLACE(normalized_text, 'À', 'A');
+    normalized_text := REPLACE(normalized_text, 'â', 'a');
+    normalized_text := REPLACE(normalized_text, 'Â', 'A');
+    normalized_text := REPLACE(normalized_text, 'í', 'i');
+    normalized_text := REPLACE(normalized_text, 'Í', 'I');
+    normalized_text := REPLACE(normalized_text, 'ì', 'i');
+    normalized_text := REPLACE(normalized_text, 'Ì', 'I');
+    normalized_text := REPLACE(normalized_text, 'î', 'i');
+    normalized_text := REPLACE(normalized_text, 'Î', 'I');
+    normalized_text := REPLACE(normalized_text, 'ï', 'i');
+    normalized_text := REPLACE(normalized_text, 'Ï', 'I');
+    normalized_text := REPLACE(normalized_text, 'ó', 'o');
+    normalized_text := REPLACE(normalized_text, 'Ó', 'O');
+    normalized_text := REPLACE(normalized_text, 'ò', 'o');
+    normalized_text := REPLACE(normalized_text, 'Ò', 'O');
+    normalized_text := REPLACE(normalized_text, 'ô', 'o');
+    normalized_text := REPLACE(normalized_text, 'Ô', 'O');
+    normalized_text := REPLACE(normalized_text, 'ú', 'u');
+    normalized_text := REPLACE(normalized_text, 'Ú', 'U');
+    normalized_text := REPLACE(normalized_text, 'ù', 'u');
+    normalized_text := REPLACE(normalized_text, 'Ù', 'U');
+    normalized_text := REPLACE(normalized_text, 'û', 'u');
+    normalized_text := REPLACE(normalized_text, 'Û', 'U');
+
+    -- Convert to lowercase
+    normalized_text := lower(normalized_text);
+
+    -- Replace non-alphanumeric characters with hyphens
+    normalized_text := regexp_replace(normalized_text, '[^a-z0-9]+', '-', 'g');
+
+    -- Remove leading and trailing hyphens
+    normalized_text := trim(both '-' from normalized_text);
+
+    -- Replace multiple consecutive hyphens with single hyphen
+    normalized_text := regexp_replace(normalized_text, '-+', '-', 'g');
+
+    RETURN normalized_text;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- Auto-generate slugs for leagues
 CREATE OR REPLACE FUNCTION generate_league_slug()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.slug IS NULL OR NEW.slug = '' THEN
-        NEW.slug := lower(regexp_replace(
-            regexp_replace(
-                regexp_replace(NEW.name || ' ' || COALESCE(NEW.country, ''), '[^a-zA-Z0-9\s]', '', 'g'),
-                '\s+', '-', 'g'
-            ),
-            '^-+|-+$', '', 'g'
-        ));
+        NEW.slug := normalize_slug(NEW.name || ' ' || COALESCE(NEW.country, ''));
     END IF;
     RETURN NEW;
 END;
@@ -285,13 +395,7 @@ CREATE OR REPLACE FUNCTION generate_team_slug()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.slug IS NULL OR NEW.slug = '' THEN
-        NEW.slug := lower(regexp_replace(
-            regexp_replace(
-                regexp_replace(NEW.name, '[^a-zA-Z0-9\s]', '', 'g'),
-                '\s+', '-', 'g'
-            ),
-            '^-+|-+$', '', 'g'
-        ));
+        NEW.slug := normalize_slug(NEW.name);
     END IF;
     RETURN NEW;
 END;
@@ -312,17 +416,12 @@ BEGIN
         SELECT name INTO home_team_name FROM teams WHERE id = NEW.home_team_id;
         SELECT name INTO away_team_name FROM teams WHERE id = NEW.away_team_id;
         
-        -- Create base slug from team names and external_id
-        base_slug := lower(regexp_replace(
-            regexp_replace(
-                regexp_replace(
-                    COALESCE(home_team_name, 'team') || '-vs-' || COALESCE(away_team_name, 'team') || '-' || NEW.external_id,
-                    '[^a-zA-Z0-9\s-]', '', 'g'
-                ),
-                '\s+', '-', 'g'
-            ),
-            '^-+|-+$', '', 'g'
-        ));
+        -- Create base slug from team names and external_id using improved normalization
+        base_slug := normalize_slug(
+            COALESCE(home_team_name, 'team') || ' vs ' || 
+            COALESCE(away_team_name, 'team') || ' ' || 
+            NEW.external_id
+        );
         
         -- Ensure uniqueness by appending counter if needed
         final_slug := base_slug;
@@ -342,13 +441,7 @@ CREATE OR REPLACE FUNCTION generate_market_type_slug()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.slug IS NULL OR NEW.slug = '' THEN
-        NEW.slug := lower(regexp_replace(
-            regexp_replace(
-                regexp_replace(NEW.code || '-' || NEW.name, '[^a-zA-Z0-9\s-]', '', 'g'),
-                '\s+', '-', 'g'
-            ),
-            '^-+|-+$', '', 'g'
-        ));
+        NEW.slug := normalize_slug(NEW.code || ' ' || NEW.name);
     END IF;
     RETURN NEW;
 END;

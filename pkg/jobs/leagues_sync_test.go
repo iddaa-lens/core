@@ -50,5 +50,12 @@ func TestLeaguesSyncJob_Execute(t *testing.T) {
 	err := job.Execute(ctx)
 	if err == nil {
 		t.Error("Expected error due to missing dependencies, but got nil")
+	} else {
+		// Check that we get a proper error (not a panic)
+		if err.Error() != "leagues service is not initialized" {
+			// It's OK if we get a different error (e.g., database connection error)
+			// The important thing is that we don't panic
+			t.Logf("Got expected error: %v", err)
+		}
 	}
 }

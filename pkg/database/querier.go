@@ -24,6 +24,7 @@ type Querier interface {
 	CreateTeamMapping(ctx context.Context, arg CreateTeamMappingParams) (TeamMapping, error)
 	CreateVolumeHistory(ctx context.Context, arg CreateVolumeHistoryParams) (BettingVolumeHistory, error)
 	DeleteLeague(ctx context.Context, id int32) error
+	GetActiveEventsForDetailedSync(ctx context.Context, limitCount int32) ([]Event, error)
 	GetBigMovers(ctx context.Context, arg GetBigMoversParams) ([]GetBigMoversRow, error)
 	GetContrarianBets(ctx context.Context) ([]ContrarianBet, error)
 	GetCurrentOdds(ctx context.Context, eventID pgtype.Int4) ([]GetCurrentOddsRow, error)
@@ -34,6 +35,7 @@ type Querier interface {
 	// Analyze all betting distributions for an event
 	GetEventBettingPatterns(ctx context.Context, eventID pgtype.Int4) ([]GetEventBettingPatternsRow, error)
 	GetEventByExternalID(ctx context.Context, externalID string) (GetEventByExternalIDRow, error)
+	GetEventByExternalIDSimple(ctx context.Context, externalID string) (Event, error)
 	GetEventDistributions(ctx context.Context, eventID pgtype.Int4) ([]OutcomeDistribution, error)
 	GetEventStatisticsSummary(ctx context.Context, eventID int32) (GetEventStatisticsSummaryRow, error)
 	// Find low-volume events with big movements (potential sharp money)

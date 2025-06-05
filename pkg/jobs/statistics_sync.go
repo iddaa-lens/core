@@ -2,9 +2,9 @@ package jobs
 
 import (
 	"context"
-	"log"
 	"time"
 
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
 
@@ -25,24 +25,78 @@ func (j *StatisticsSyncJob) Name() string {
 }
 
 func (j *StatisticsSyncJob) Execute(ctx context.Context) error {
-	log.Printf("Starting statistics sync job for sport type %d...", j.sportType)
+	log := logger.WithContext(ctx, "statistics-sync")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "sync_start").
+		Int("sport_type", j.sportType).
+		Msg("Starting statistics sync job")
+
+	errorCount := 0
+	processedDates := 0
 
 	// Sync today's events
 	today := time.Now().Format("2006-01-02")
+	dateStart := time.Now()
+	log.Debug().
+		Str("action", "date_sync_start").
+		Str("date", today).
+		Str("date_type", "today").
+		Msg("Syncing statistics for date")
+
 	err := j.statisticsService.SyncEventStatistics(ctx, j.sportType, today)
 	if err != nil {
-		log.Printf("Failed to sync today's statistics: %v", err)
+		errorCount++
+		log.Error().
+			Err(err).
+			Str("action", "date_sync_failed").
+			Str("date", today).
+			Str("date_type", "today").
+			Dur("duration", time.Since(dateStart)).
+			Msg("Failed to sync today's statistics")
 		// Continue with yesterday's events even if today fails
+	} else {
+		processedDates++
+		log.Debug().
+			Str("action", "date_sync_complete").
+			Str("date", today).
+			Str("date_type", "today").
+			Dur("duration", time.Since(dateStart)).
+			Msg("Today's statistics sync completed")
 	}
 
 	// Also sync yesterday's events to catch any late updates
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	dateStart = time.Now()
+	log.Debug().
+		Str("action", "date_sync_start").
+		Str("date", yesterday).
+		Str("date_type", "yesterday").
+		Msg("Syncing statistics for date")
+
 	err = j.statisticsService.SyncEventStatistics(ctx, j.sportType, yesterday)
 	if err != nil {
-		log.Printf("Failed to sync yesterday's statistics: %v", err)
+		errorCount++
+		log.Error().
+			Err(err).
+			Str("action", "date_sync_failed").
+			Str("date", yesterday).
+			Str("date_type", "yesterday").
+			Dur("duration", time.Since(dateStart)).
+			Msg("Failed to sync yesterday's statistics")
+	} else {
+		processedDates++
+		log.Debug().
+			Str("action", "date_sync_complete").
+			Str("date", yesterday).
+			Str("date_type", "yesterday").
+			Dur("duration", time.Since(dateStart)).
+			Msg("Yesterday's statistics sync completed")
 	}
 
-	log.Printf("Statistics sync completed successfully")
+	duration := time.Since(start)
+	log.LogJobComplete("statistics_sync", duration, processedDates, errorCount)
 	return nil
 }
 

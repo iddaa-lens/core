@@ -3,10 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/models"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -14,33 +14,55 @@ import (
 type SportService struct {
 	db     *database.Queries
 	client *IddaaClient
+	logger *logger.Logger
 }
 
 func NewSportService(db *database.Queries, client *IddaaClient) *SportService {
 	return &SportService{
 		db:     db,
 		client: client,
+		logger: logger.New("sports-service"),
 	}
 }
 
 func (s *SportService) SyncSports(ctx context.Context) error {
-	log.Println("Starting sports sync...")
+	log := logger.WithContext(ctx, "sports-sync")
+
+	log.Info().
+		Str("action", "sync_start").
+		Msg("Starting sports sync")
 
 	resp, err := s.client.GetSportInfo()
 	if err != nil {
 		return fmt.Errorf("failed to fetch sport info: %w", err)
 	}
 
-	log.Printf("Fetched %d sports from API", len(resp.Data))
+	log.Info().
+		Str("action", "api_response").
+		Int("sports_count", len(resp.Data)).
+		Msg("Fetched sports from API")
+
+	successCount := 0
+	errorCount := 0
 
 	for _, sport := range resp.Data {
 		if err := s.saveSport(ctx, sport); err != nil {
-			log.Printf("Failed to save sport %d: %v", sport.SportID, err)
+			errorCount++
+			log.Error().
+				Err(err).
+				Int("sport_id", sport.SportID).
+				Str("action", "save_failed").
+				Msg("Failed to save sport")
 			continue
 		}
+		successCount++
 	}
 
-	log.Println("Sports sync completed")
+	log.Info().
+		Str("action", "sync_complete").
+		Int("success_count", successCount).
+		Int("error_count", errorCount).
+		Msg("Sports sync completed")
 	return nil
 }
 
@@ -61,7 +83,10 @@ func (s *SportService) saveSport(ctx context.Context, sport models.IddaaSportInf
 
 	sportInfo, exists := sportMapping[sport.SportID]
 	if !exists {
-		log.Printf("Unknown sport ID %d, skipping", sport.SportID)
+		s.logger.Warn().
+			Int("sport_id", sport.SportID).
+			Str("action", "unknown_sport").
+			Msg("Unknown sport ID, skipping")
 		return nil
 	}
 
@@ -84,8 +109,14 @@ func (s *SportService) saveSport(ctx context.Context, sport models.IddaaSportInf
 		return fmt.Errorf("failed to upsert sport: %w", err)
 	}
 
-	log.Printf("Updated sport %d (%s) - Live: %d, Upcoming: %d, Events: %d",
-		sport.SportID, sportInfo.name, sport.LiveCount, sport.UpcomingCount, sport.EventsCount)
+	s.logger.Debug().
+		Int("sport_id", sport.SportID).
+		Str("sport_name", sportInfo.name).
+		Int("live_count", sport.LiveCount).
+		Int("upcoming_count", sport.UpcomingCount).
+		Int("events_count", sport.EventsCount).
+		Str("action", "sport_updated").
+		Msg("Updated sport data")
 
 	return nil
 }

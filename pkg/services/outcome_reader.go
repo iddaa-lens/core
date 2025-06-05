@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/betslib/iddaa-core/pkg/database"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/betslib/iddaa-core/pkg/database"
 )
 
 type OutcomeReaderService struct {

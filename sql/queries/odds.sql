@@ -20,7 +20,9 @@ INSERT INTO current_odds (
     opening_value, 
     highest_value, 
     lowest_value,
-    winning_odds
+    winning_odds,
+    total_movement,
+    movement_percentage
 ) VALUES (
     sqlc.arg(event_id), 
     sqlc.arg(market_type_id), 
@@ -29,13 +31,23 @@ INSERT INTO current_odds (
     sqlc.arg(opening_value), 
     sqlc.arg(highest_value), 
     sqlc.arg(lowest_value),
-    sqlc.arg(winning_odds)
+    sqlc.arg(winning_odds),
+    0, -- First time, no movement
+    0  -- First time, no movement percentage
 )
 ON CONFLICT (event_id, market_type_id, outcome) DO UPDATE SET
     odds_value = EXCLUDED.odds_value,
     winning_odds = EXCLUDED.winning_odds,
     highest_value = GREATEST(current_odds.highest_value, EXCLUDED.odds_value),
     lowest_value = LEAST(current_odds.lowest_value, EXCLUDED.odds_value),
+    -- Calculate movement: new_odds - opening_odds
+    total_movement = EXCLUDED.odds_value - current_odds.opening_value,
+    -- Calculate movement percentage: ((new_odds - opening_odds) / opening_odds) * 100
+    movement_percentage = CASE 
+        WHEN current_odds.opening_value > 0 THEN 
+            ROUND(((EXCLUDED.odds_value - current_odds.opening_value) / current_odds.opening_value * 100)::numeric, 2)
+        ELSE 0 
+    END,
     last_updated = CURRENT_TIMESTAMP
 RETURNING *;
 
@@ -46,14 +58,31 @@ INSERT INTO odds_history (
     outcome, 
     odds_value, 
     previous_value,
-    winning_odds
+    winning_odds,
+    change_amount,
+    change_percentage,
+    multiplier
 ) VALUES (
     sqlc.arg(event_id), 
     sqlc.arg(market_type_id), 
     sqlc.arg(outcome), 
     sqlc.arg(odds_value), 
     sqlc.arg(previous_value),
-    sqlc.arg(winning_odds)
+    sqlc.arg(winning_odds),
+    -- Calculate change amount: new_odds - previous_odds
+    sqlc.arg(odds_value)::numeric - sqlc.arg(previous_value)::numeric,
+    -- Calculate change percentage: ((new_odds - previous_odds) / previous_odds) * 100
+    CASE 
+        WHEN sqlc.arg(previous_value)::numeric > 0 THEN 
+            ROUND(((sqlc.arg(odds_value)::numeric - sqlc.arg(previous_value)::numeric) / sqlc.arg(previous_value)::numeric * 100), 2)
+        ELSE 0 
+    END,
+    -- Calculate multiplier: new_odds / previous_odds
+    CASE 
+        WHEN sqlc.arg(previous_value)::numeric > 0 THEN 
+            ROUND((sqlc.arg(odds_value)::numeric / sqlc.arg(previous_value)::numeric), 3)
+        ELSE 1 
+    END
 )
 RETURNING *;
 

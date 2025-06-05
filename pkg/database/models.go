@@ -91,6 +91,14 @@ type Event struct {
 	BettingVolumePercentage pgtype.Numeric   `db:"betting_volume_percentage" json:"betting_volume_percentage"`
 	VolumeRank              pgtype.Int4      `db:"volume_rank" json:"volume_rank"`
 	VolumeUpdatedAt         pgtype.Timestamp `db:"volume_updated_at" json:"volume_updated_at"`
+	BulletinID              pgtype.Int8      `db:"bulletin_id" json:"bulletin_id"`
+	Version                 pgtype.Int8      `db:"version" json:"version"`
+	SportID                 pgtype.Int4      `db:"sport_id" json:"sport_id"`
+	BetProgram              pgtype.Int4      `db:"bet_program" json:"bet_program"`
+	Mbc                     pgtype.Int4      `db:"mbc" json:"mbc"`
+	HasKingOdd              pgtype.Bool      `db:"has_king_odd" json:"has_king_odd"`
+	OddsCount               pgtype.Int4      `db:"odds_count" json:"odds_count"`
+	HasCombine              pgtype.Bool      `db:"has_combine" json:"has_combine"`
 	CreatedAt               pgtype.Timestamp `db:"created_at" json:"created_at"`
 	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
@@ -118,13 +126,24 @@ type LeagueMapping struct {
 }
 
 type MarketType struct {
-	ID          int32            `db:"id" json:"id"`
-	Code        string           `db:"code" json:"code"`
-	Name        string           `db:"name" json:"name"`
-	Slug        string           `db:"slug" json:"slug"`
-	Description pgtype.Text      `db:"description" json:"description"`
-	CreatedAt   pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt   pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	ID                    int32            `db:"id" json:"id"`
+	Code                  string           `db:"code" json:"code"`
+	Name                  string           `db:"name" json:"name"`
+	Slug                  string           `db:"slug" json:"slug"`
+	Description           pgtype.Text      `db:"description" json:"description"`
+	IddaaMarketID         pgtype.Int4      `db:"iddaa_market_id" json:"iddaa_market_id"`
+	IsLive                pgtype.Bool      `db:"is_live" json:"is_live"`
+	MarketType            pgtype.Int4      `db:"market_type" json:"market_type"`
+	MinMarketDefaultValue pgtype.Int4      `db:"min_market_default_value" json:"min_market_default_value"`
+	MaxMarketLimitValue   pgtype.Int4      `db:"max_market_limit_value" json:"max_market_limit_value"`
+	Priority              pgtype.Int4      `db:"priority" json:"priority"`
+	SportType             pgtype.Int4      `db:"sport_type" json:"sport_type"`
+	MarketSubType         pgtype.Int4      `db:"market_sub_type" json:"market_sub_type"`
+	MinDefaultValue       pgtype.Int4      `db:"min_default_value" json:"min_default_value"`
+	MaxLimitValue         pgtype.Int4      `db:"max_limit_value" json:"max_limit_value"`
+	IsActive              pgtype.Bool      `db:"is_active" json:"is_active"`
+	CreatedAt             pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt             pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
 type MatchEvent struct {

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -50,7 +51,7 @@ type FootballAPICountry struct {
 type FootballAPIResponse struct {
 	Get        string                 `json:"get"`
 	Parameters map[string]interface{} `json:"parameters"`
-	Errors     []string               `json:"errors"`
+	Errors     interface{}            `json:"errors"` // Can be []string or map[string]interface{}
 	Results    int                    `json:"results"`
 	Paging     FootballAPIPaging      `json:"paging"`
 	Response   interface{}            `json:"response"`
@@ -64,8 +65,12 @@ type FootballAPIPaging struct {
 
 // FootballAPILeaguesResponse represents leagues API response
 type FootballAPILeaguesResponse struct {
-	FootballAPIResponse
-	Response []FootballAPILeagueData `json:"response"`
+	Get        string                  `json:"get"`
+	Parameters map[string]interface{}  `json:"parameters"`
+	Errors     interface{}             `json:"errors"` // Can be []string or map[string]interface{}
+	Results    int                     `json:"results"`
+	Paging     FootballAPIPaging       `json:"paging"`
+	Response   []FootballAPILeagueData `json:"response"`
 }
 
 // FootballAPILeagueData represents individual league data from API
@@ -107,8 +112,12 @@ type CoverageDetails struct {
 
 // FootballAPITeamsResponse represents teams API response
 type FootballAPITeamsResponse struct {
-	FootballAPIResponse
-	Response []FootballAPITeamData `json:"response"`
+	Get        string                 `json:"get"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Errors     interface{}            `json:"errors"` // Can be []string or map[string]interface{}
+	Results    int                    `json:"results"`
+	Paging     FootballAPIPaging      `json:"paging"`
+	Response   []FootballAPITeamData  `json:"response"`
 }
 
 // FootballAPITeamData represents individual team data from API
@@ -195,3 +204,105 @@ const (
 	MediumConfidenceThreshold = 0.7
 	LowConfidenceThreshold    = 0.5
 )
+
+// HasErrors checks if the Football API response contains errors
+func (r *FootballAPILeaguesResponse) HasErrors() bool {
+	return r.hasErrors()
+}
+
+// HasErrors checks if the Football API response contains errors
+func (r *FootballAPITeamsResponse) HasErrors() bool {
+	return r.hasErrors()
+}
+
+// GetErrorMessages extracts error messages from the response
+func (r *FootballAPILeaguesResponse) GetErrorMessages() []string {
+	return r.getErrorMessages()
+}
+
+// GetErrorMessages extracts error messages from the response
+func (r *FootballAPITeamsResponse) GetErrorMessages() []string {
+	return r.getErrorMessages()
+}
+
+// hasErrors checks if there are any errors in the response
+func (r *FootballAPILeaguesResponse) hasErrors() bool {
+	if r.Errors == nil {
+		return false
+	}
+
+	switch errors := r.Errors.(type) {
+	case []string:
+		return len(errors) > 0
+	case map[string]interface{}:
+		return len(errors) > 0
+	case string:
+		return errors != ""
+	default:
+		return false
+	}
+}
+
+// hasErrors checks if there are any errors in the response
+func (r *FootballAPITeamsResponse) hasErrors() bool {
+	if r.Errors == nil {
+		return false
+	}
+
+	switch errors := r.Errors.(type) {
+	case []string:
+		return len(errors) > 0
+	case map[string]interface{}:
+		return len(errors) > 0
+	case string:
+		return errors != ""
+	default:
+		return false
+	}
+}
+
+// getErrorMessages extracts error messages as strings
+func (r *FootballAPILeaguesResponse) getErrorMessages() []string {
+	return extractErrorMessages(r.Errors)
+}
+
+// getErrorMessages extracts error messages as strings
+func (r *FootballAPITeamsResponse) getErrorMessages() []string {
+	return extractErrorMessages(r.Errors)
+}
+
+// extractErrorMessages helper function to extract error messages
+func extractErrorMessages(errors interface{}) []string {
+	if errors == nil {
+		return nil
+	}
+
+	switch e := errors.(type) {
+	case []string:
+		return e
+	case string:
+		return []string{e}
+	case map[string]interface{}:
+		var messages []string
+		for key, value := range e {
+			if valueStr, ok := value.(string); ok {
+				messages = append(messages, key+": "+valueStr)
+			} else {
+				messages = append(messages, key+": "+fmt.Sprintf("%v", value))
+			}
+		}
+		return messages
+	case []interface{}:
+		var messages []string
+		for _, item := range e {
+			if itemStr, ok := item.(string); ok {
+				messages = append(messages, itemStr)
+			} else {
+				messages = append(messages, fmt.Sprintf("%v", item))
+			}
+		}
+		return messages
+	default:
+		return []string{fmt.Sprintf("%v", errors)}
+	}
+}

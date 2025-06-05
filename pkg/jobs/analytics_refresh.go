@@ -2,9 +2,10 @@ package jobs
 
 import (
 	"context"
-	"log"
+	"time"
 
 	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/betslib/iddaa-core/pkg/logger"
 )
 
 type AnalyticsRefreshJob struct {
@@ -22,20 +23,47 @@ func (j *AnalyticsRefreshJob) Name() string {
 }
 
 func (j *AnalyticsRefreshJob) Execute(ctx context.Context) error {
-	log.Printf("Starting analytics refresh job...")
+	log := logger.WithContext(ctx, "analytics-refresh")
+	start := time.Now()
+
+	log.Info().
+		Str("action", "refresh_start").
+		Msg("Starting analytics refresh job")
+
+	errorCount := 0
+	refreshedViews := 0
 
 	// Refresh materialized views for better performance
-	log.Printf("Refreshing contrarian bets view...")
+	viewStart := time.Now()
+	log.Debug().
+		Str("action", "view_refresh_start").
+		Str("view_name", "contrarian_bets").
+		Msg("Refreshing materialized view")
+
 	err := j.db.RefreshContrarianBets(ctx)
 	if err != nil {
-		log.Printf("Failed to refresh contrarian bets: %v", err)
+		errorCount++
+		log.Error().
+			Err(err).
+			Str("action", "view_refresh_failed").
+			Str("view_name", "contrarian_bets").
+			Dur("duration", time.Since(viewStart)).
+			Msg("Failed to refresh contrarian bets view")
 		// Continue with other refreshes even if one fails
+	} else {
+		refreshedViews++
+		log.Debug().
+			Str("action", "view_refresh_complete").
+			Str("view_name", "contrarian_bets").
+			Dur("duration", time.Since(viewStart)).
+			Msg("Contrarian bets view refreshed")
 	}
 
 	// Note: volume_trends materialized view doesn't have a specific refresh function
 	// in our current queries, but we could add one if needed
 
-	log.Printf("Analytics refresh completed successfully")
+	duration := time.Since(start)
+	log.LogJobComplete("analytics_refresh", duration, refreshedViews, errorCount)
 	return nil
 }
 

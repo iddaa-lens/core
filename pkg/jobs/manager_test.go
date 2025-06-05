@@ -145,8 +145,8 @@ func TestJobExecution(t *testing.T) {
 	manager.Start()
 	defer manager.Stop()
 
-	// Wait for job to execute
-	time.Sleep(200 * time.Millisecond)
+	// Wait for job to execute (cron needs time to schedule and execute)
+	time.Sleep(300 * time.Millisecond)
 
 	if !testJob.executed {
 		t.Error("Job was not executed")

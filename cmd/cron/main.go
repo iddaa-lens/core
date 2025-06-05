@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,23 +14,31 @@ import (
 	"github.com/betslib/iddaa-core/internal/config"
 	"github.com/betslib/iddaa-core/pkg/database"
 	"github.com/betslib/iddaa-core/pkg/jobs"
+	"github.com/betslib/iddaa-core/pkg/logger"
 	"github.com/betslib/iddaa-core/pkg/services"
 )
 
 func main() {
 	// Parse command line flags
 	var (
-		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues)")
+		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds)")
 		once    = flag.Bool("once", false, "Run job once and exit")
 	)
 	flag.Parse()
+
+	// Setup structured logging
+	logger.SetupLogger()
+	log := logger.New("cron-service")
 
 	cfg := config.Load()
 
 	// Connect to database
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal().
+			Err(err).
+			Str("action", "db_connect_failed").
+			Msg("Failed to connect to database")
 	}
 	defer db.Close()
 
@@ -101,6 +108,12 @@ func main() {
 		log.Fatalf("Failed to register leagues sync job: %v", err)
 	}
 
+	// Register detailed odds sync job for high-frequency odds tracking
+	detailedOddsJob := jobs.NewDetailedOddsSyncJob(queries, iddaaClient, eventsService)
+	if err := jobManager.RegisterJob(detailedOddsJob); err != nil {
+		log.Fatalf("Failed to register detailed odds sync job: %v", err)
+	}
+
 	// Handle single job execution
 	if *once && *jobName != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -161,22 +174,37 @@ func main() {
 				log.Fatalf("Failed to execute leagues job: %v", err)
 			}
 			log.Println("Leagues sync completed successfully")
+		case "detailed_odds":
+			log.Println("Running detailed odds sync job once...")
+			if err := detailedOddsJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute detailed odds job: %v", err)
+			}
+			log.Println("Detailed odds sync completed successfully")
 		default:
-			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues", *jobName)
+			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds", *jobName)
 		}
 		return
 	}
 
 	// Start job manager
 	jobManager.Start()
-	log.Printf("Cron job service started with %d jobs", len(jobManager.GetJobs()))
+	log.Info().
+		Str("action", "service_started").
+		Int("job_count", len(jobManager.GetJobs())).
+		Msg("Cron job service started")
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down cron job service...")
+	log.Info().
+		Str("action", "shutdown_initiated").
+		Msg("Shutting down cron job service")
+
 	jobManager.Stop()
-	log.Println("Cron job service stopped")
+
+	log.Info().
+		Str("action", "service_stopped").
+		Msg("Cron job service stopped")
 }
