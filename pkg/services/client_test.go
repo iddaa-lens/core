@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/betslib/iddaa-core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 // Mock HTTP response

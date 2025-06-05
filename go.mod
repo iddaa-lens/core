@@ -1,4 +1,4 @@
-module github.com/betslib/iddaa-core
+module github.com/iddaa-lens/core
 
 go 1.23.0
 

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 

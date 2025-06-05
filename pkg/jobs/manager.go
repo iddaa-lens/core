@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )

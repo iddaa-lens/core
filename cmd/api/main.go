@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 type HealthResponse struct {

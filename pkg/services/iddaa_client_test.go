@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/betslib/iddaa-core/internal/config"
-	"github.com/betslib/iddaa-core/pkg/models"
+	"github.com/iddaa-lens/core/internal/config"
+	"github.com/iddaa-lens/core/pkg/models"
 )
 
 func TestIddaaClient_GetCompetitions(t *testing.T) {

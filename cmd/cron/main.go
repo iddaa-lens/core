@@ -11,11 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 
-	"github.com/betslib/iddaa-core/internal/config"
-	"github.com/betslib/iddaa-core/pkg/database"
-	"github.com/betslib/iddaa-core/pkg/jobs"
-	"github.com/betslib/iddaa-core/pkg/logger"
-	"github.com/betslib/iddaa-core/pkg/services"
+	"github.com/iddaa-lens/core/internal/config"
+	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/jobs"
+	"github.com/iddaa-lens/core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/services"
 )
 
 func main() {

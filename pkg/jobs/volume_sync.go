@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/database"
-	"github.com/betslib/iddaa-core/pkg/logger"
-	"github.com/betslib/iddaa-core/pkg/services"
+	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/services"
 )
 
 type VolumeSyncJob struct {

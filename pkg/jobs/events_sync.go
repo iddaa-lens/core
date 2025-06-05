@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/logger"
-	"github.com/betslib/iddaa-core/pkg/models"
-	"github.com/betslib/iddaa-core/pkg/services"
+	"github.com/iddaa-lens/core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/models"
+	"github.com/iddaa-lens/core/pkg/services"
 )
 
 type EventsSyncJob struct {

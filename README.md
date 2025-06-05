@@ -1,6 +1,6 @@
-# Iddaa API Service
+# Iddaa Core Backend
 
-A simple API service with health check endpoint for Iddaa-related features.
+Core backend services for Iddaa data platform - REST API, cron jobs, and database management for comprehensive betting data analysis.
 
 ## 🚀 Quick Start
 
@@ -13,8 +13,8 @@ A simple API service with health check endpoint for Iddaa-related features.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd iddaa-core
+git clone https://github.com/iddaa-lens/core.git
+cd core
 
 # Install dependencies
 make deps
@@ -29,11 +29,18 @@ make run
 ## 📁 Project Structure
 
 ```
-├── cmd/api/               # API service
-├── docker/               # Docker files
-├── deploy/iddaa-backend/ # Kubernetes deployment
-├── Makefile              # Build and development commands
-└── CLAUDE.md            # Project documentation
+├── cmd/
+│   ├── api/              # REST API service
+│   └── cron/             # Background job scheduler
+├── pkg/
+│   ├── database/         # Database queries and models
+│   ├── jobs/             # Cron job implementations
+│   ├── services/         # Business logic services
+│   └── models/           # Data models
+├── migrations/           # Database migrations
+├── docs/                # Documentation
+├── deploy/              # Kubernetes deployment configs
+└── CLAUDE.md           # AI assistant guidance
 ```
 
 ## 🔧 Development
@@ -67,10 +74,18 @@ make build-image-tagged ORG=iddaa-backend TAG=v1.0.0
 make push-image ORG=iddaa-backend TAG=v1.0.0
 ```
 
-## 📊 API Endpoints
+## 📊 Services
 
+### API Service (`cmd/api`)
 - `GET /health` - Health check endpoint returning JSON status
 - `GET /` - Simple root endpoint returning text response
+
+### Cron Service (`cmd/cron`)
+- **Sports Sync**: Fetches sport types from Iddaa API
+- **Leagues Sync**: Syncs leagues and teams (hourly)
+- **Events Sync**: Fetches matches and odds (every 5 minutes)
+- **Config Sync**: Updates market configurations
+- **Statistics Sync**: Collects match statistics
 
 ### Health Endpoint Response
 
@@ -94,7 +109,7 @@ Deployment includes:
 - Kubernetes namespace
 - API service deployment (2 replicas)
 - ClusterIP service
-- Ingress for api.iddaa.betslib.com
+- Ingress for external access
 
 ## 🛠️ Make Commands
 
@@ -132,8 +147,8 @@ PORT=8080               # Server port (default: 8080)
 
 ## 📄 License
 
-This project is proprietary software for Betslib/Iddaa integration.
+This project is part of the Iddaa Lens platform for sports betting data analysis.
 
 ---
 
-**Simple, reliable API service for health monitoring**
+**Comprehensive backend infrastructure for betting data intelligence**

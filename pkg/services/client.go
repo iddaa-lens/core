@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/betslib/iddaa-core/internal/config"
-	"github.com/betslib/iddaa-core/pkg/logger"
-	"github.com/betslib/iddaa-core/pkg/models"
+	"github.com/iddaa-lens/core/internal/config"
+	"github.com/iddaa-lens/core/pkg/logger"
+	"github.com/iddaa-lens/core/pkg/models"
 )
 
 type IddaaClient struct {

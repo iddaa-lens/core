@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/betslib/iddaa-core/pkg/models"
+	"github.com/iddaa-lens/core/pkg/models"
 )
 
 // CompetitionSyncer defines the interface for competition synchronization

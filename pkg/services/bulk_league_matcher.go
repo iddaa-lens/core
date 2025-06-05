@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/betslib/iddaa-core/pkg/database"
-	"github.com/betslib/iddaa-core/pkg/models"
+	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/models"
 )
 
 // BulkLeagueMatcherService handles bulk league matching using AI

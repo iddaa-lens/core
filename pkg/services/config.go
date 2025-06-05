@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/betslib/iddaa-core/pkg/database"
-	"github.com/betslib/iddaa-core/pkg/models"
+	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/models"
 )
 
 type ConfigService struct {
