@@ -101,7 +101,7 @@ The system includes 10 distinct cron jobs that handle data synchronization, anal
 - **Implementation**: `leagues_sync.go`
 - **Dependencies**: 
   - Iddaa API access (required)
-  - `FOOTBALL_API_KEY` environment variable (optional)
+  - `API_FOOTBALL_API_KEY` environment variable (optional)
   - `OPENAI_API_KEY` environment variable (optional)
 - **Database Tables**: `leagues`, `teams`, `league_mappings`, `team_mappings`
 - **Test Command**: `./cron --job=leagues --once`
@@ -135,7 +135,7 @@ Jobs should typically be run in this order for initial setup:
 Required for full functionality:
 ```bash
 export DATABASE_URL="postgresql://user:pass@host:port/db?sslmode=disable"
-export FOOTBALL_API_KEY="your_football_api_key"  # Optional for leagues job
+export API_FOOTBALL_API_KEY="your_API_FOOTBALL_API_KEY"  # Optional for leagues job
 export OPENAI_API_KEY="your_openai_api_key"      # Optional for AI translation
 ```
 

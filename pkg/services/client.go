@@ -55,8 +55,6 @@ func (c *IddaaClient) addBrowserHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	// Let Go's http client handle compression automatically
-	// req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"`)
 	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
 	req.Header.Set("Sec-Ch-Ua-Platform", `"macOS"`)
@@ -134,7 +132,60 @@ func (c *IddaaClient) GetCompetitions() (*models.IddaaAPIResponse[models.IddaaCo
 	return &result, nil
 }
 
-func (c *IddaaClient) GetEvents(competitionID int) (*models.IddaaAPIResponse[models.IddaaEvent], error) {
+// GetEvents fetches all events for a specific sport (live + upcoming)
+func (c *IddaaClient) GetEvents(sportID int) (*models.IddaaEventsResponse, error) {
+	url := fmt.Sprintf("%s/sportsbook/events?st=%d&type=0&version=0", c.baseURL, sportID)
+
+	resp, err := c.makeRequest(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var result models.IddaaEventsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.IsSuccess {
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &result, nil
+}
+
+// GetLiveEvents fetches only live events for a specific sport
+func (c *IddaaClient) GetLiveEvents(sportID int) (*models.IddaaEventsResponse, error) {
+	url := fmt.Sprintf("%s/sportsbook/events?st=%d&type=1&version=0", c.baseURL, sportID)
+
+	resp, err := c.makeRequest(url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var result models.IddaaEventsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.IsSuccess {
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &result, nil
+}
+
+// GetEventsByCompetition fetches events for a specific competition (legacy method)
+func (c *IddaaClient) GetEventsByCompetition(competitionID int) (*models.IddaaAPIResponse[models.IddaaEvent], error) {
 	url := fmt.Sprintf("%s/sportsbook/competitions/%d/events", c.baseURL, competitionID)
 
 	resp, err := c.makeRequest(url)

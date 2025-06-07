@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 // AITranslationService handles AI-powered translation of Turkish league names to English
@@ -16,6 +17,7 @@ type AITranslationService struct {
 	apiKey  string
 	baseURL string
 	cache   map[string][]string // Simple in-memory cache
+	logger  *logger.Logger
 }
 
 // NewAITranslationService creates a new AI translation service
@@ -27,6 +29,7 @@ func NewAITranslationService(apiKey string) *AITranslationService {
 		apiKey:  apiKey,
 		baseURL: "https://api.openai.com/v1/chat/completions",
 		cache:   make(map[string][]string),
+		logger:  logger.New("ai-translator"),
 	}
 }
 
@@ -66,7 +69,11 @@ func (s *AITranslationService) TranslateLeagueName(ctx context.Context, turkishN
 	// Check cache first
 	cacheKey := fmt.Sprintf("%s|%s", turkishName, country)
 	if cached, exists := s.cache[cacheKey]; exists {
-		log.Printf("Using cached translation for: %s", turkishName)
+		s.logger.Debug().
+			Str("action", "cache_hit").
+			Str("league_name", turkishName).
+			Str("country", country).
+			Msg("Using cached league translation")
 		return cached, nil
 	}
 
@@ -76,20 +83,36 @@ func (s *AITranslationService) TranslateLeagueName(ctx context.Context, turkishN
 	// Call OpenAI API
 	translations, err := s.callOpenAI(ctx, prompt)
 	if err != nil {
-		log.Printf("AI translation failed for %s: %v", turkishName, err)
+		s.logger.Error().
+			Err(err).
+			Str("action", "translation_failed").
+			Str("league_name", turkishName).
+			Str("country", country).
+			Msg("AI translation failed, using fallback")
 		// Fallback to static translation
 		return s.fallbackTranslation(turkishName), nil
 	}
 
 	// Cache the result
 	s.cache[cacheKey] = translations
-	log.Printf("AI translated '%s' to: %v", turkishName, translations)
+	s.logger.Info().
+		Str("action", "translated").
+		Str("type", "league").
+		Str("original", turkishName).
+		Str("country", country).
+		Strs("translations", translations).
+		Msg("AI translated league name")
 
 	return translations, nil
 }
 
 // createTranslationPrompt creates a focused prompt for league name translation
 func (s *AITranslationService) createTranslationPrompt(turkishName, country string) string {
+	// If it's clearly not Turkish (e.g., Brazilian teams), adjust the prompt
+	if country != "" && country != "Turkey" && country != "Türkiye" {
+		return s.createGenericTranslationPrompt(turkishName, country)
+	}
+
 	return fmt.Sprintf(`Translate this Turkish football league name to English for international football API matching.
 
 Turkish League: "%s"
@@ -243,6 +266,100 @@ func (s *AITranslationService) fallbackTranslation(turkishName string) []string 
 
 	// Return the original and fallback
 	return []string{turkishName, fallback}
+}
+
+// createGenericTranslationPrompt creates a prompt for non-Turkish names
+func (s *AITranslationService) createGenericTranslationPrompt(name, country string) string {
+	return fmt.Sprintf(`This is a football team or league name that may already be in its standard international form.
+
+Name: "%s"
+Country: %s
+
+If this is already a commonly used international name, return it as-is.
+If it contains local language elements, provide the standard English variations used in international football.
+
+Return 1-3 variations, one per line, without numbers or explanations.
+
+Examples:
+"Crb Al" (Brazil) → CRB
+"America MG" (Brazil) → America Mineiro
+"Avai SC" (Brazil) → Avai
+"Athletic Club Sjdr MG" (Brazil) → Athletic Club
+
+Now process: "%s"`, name, country, name)
+}
+
+// TranslateTeamName translates a team name to multiple English variations
+func (s *AITranslationService) TranslateTeamName(ctx context.Context, teamName, country string) ([]string, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("team|%s|%s", teamName, country)
+	if cached, exists := s.cache[cacheKey]; exists {
+		s.logger.Debug().
+			Str("action", "cache_hit").
+			Str("team_name", teamName).
+			Str("country", country).
+			Msg("Using cached team translation")
+		return cached, nil
+	}
+
+	// Create the translation prompt
+	prompt := s.createTeamTranslationPrompt(teamName, country)
+
+	// Call OpenAI API
+	translations, err := s.callOpenAI(ctx, prompt)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("action", "translation_failed").
+			Str("team_name", teamName).
+			Str("country", country).
+			Msg("AI translation failed, returning original")
+		// Fallback to returning the original name
+		return []string{teamName}, nil
+	}
+
+	// Cache the result
+	s.cache[cacheKey] = translations
+	s.logger.Info().
+		Str("action", "translated").
+		Str("type", "team").
+		Str("original", teamName).
+		Str("country", country).
+		Strs("translations", translations).
+		Msg("AI translated team name")
+
+	return translations, nil
+}
+
+// createTeamTranslationPrompt creates a focused prompt for team name translation
+func (s *AITranslationService) createTeamTranslationPrompt(teamName, country string) string {
+	// If it's clearly not Turkish, use generic prompt
+	if country != "" && country != "Turkey" && country != "Türkiye" {
+		return s.createGenericTranslationPrompt(teamName, country)
+	}
+
+	return fmt.Sprintf(`Translate this Turkish football team name to English for international football API matching.
+
+Turkish Team: "%s"
+Country: %s
+
+Provide 2-3 English variations commonly used in international football databases. Focus on:
+1. Official English name used by FIFA/UEFA
+2. Common shortened version
+3. Alternative spelling if applicable
+
+Return ONLY the English names, one per line, without numbers or explanations.
+
+Examples:
+Turkish: "Galatasaray SK" → 
+Galatasaray
+Galatasaray SK
+
+Turkish: "Fenerbahçe Spor Kulübü" →
+Fenerbahce
+Fenerbahce SK
+
+Now translate: "%s"`, teamName, country, teamName)
 }
 
 // ClearCache clears the translation cache

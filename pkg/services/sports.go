@@ -72,13 +72,31 @@ func (s *SportService) saveSport(ctx context.Context, sport models.IddaaSportInf
 		name string
 		code string
 	}{
-		1:  {name: "Football", code: "FOOTBALL"},
-		2:  {name: "Basketball", code: "BASKETBALL"},
-		4:  {name: "Ice Hockey", code: "ICE_HOCKEY"},
-		5:  {name: "Tennis", code: "TENNIS"},
-		6:  {name: "Handball", code: "HANDBALL"},
-		11: {name: "Formula 1", code: "FORMULA1"},
-		23: {name: "Other", code: "OTHER"},
+		1:   {name: "Football", code: "FOOTBALL"},
+		2:   {name: "Basketball", code: "BASKETBALL"},
+		4:   {name: "Ice Hockey", code: "ICE_HOCKEY"},
+		5:   {name: "Tennis", code: "TENNIS"},
+		6:   {name: "Handball", code: "HANDBALL"},
+		7:   {name: "American Football", code: "AMERICAN_FOOTBALL"},
+		8:   {name: "Baseball", code: "BASEBALL"},
+		9:   {name: "Boxing", code: "BOXING"},
+		10:  {name: "Golf", code: "GOLF"},
+		11:  {name: "Formula 1", code: "FORMULA1"},
+		12:  {name: "Cycling", code: "CYCLING"},
+		13:  {name: "Athletics", code: "ATHLETICS"},
+		14:  {name: "Swimming", code: "SWIMMING"},
+		15:  {name: "Skiing", code: "SKIING"},
+		16:  {name: "Snooker", code: "SNOOKER"},
+		17:  {name: "Darts", code: "DARTS"},
+		18:  {name: "Water Polo", code: "WATER_POLO"},
+		19:  {name: "Rugby", code: "RUGBY"},
+		20:  {name: "Cricket", code: "CRICKET"},
+		21:  {name: "Table Tennis", code: "TABLE_TENNIS"},
+		22:  {name: "Badminton", code: "BADMINTON"},
+		23:  {name: "Volleyball", code: "VOLLEYBALL"}, // Corrected - volleyball is ID 23
+		117: {name: "MMA", code: "MMA"},
+		// Add a catch-all for truly unknown sports
+		999: {name: "Other", code: "OTHER"},
 	}
 
 	sportInfo, exists := sportMapping[sport.SportID]

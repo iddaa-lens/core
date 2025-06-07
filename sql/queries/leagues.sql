@@ -18,6 +18,37 @@ INSERT INTO league_mappings (
     sqlc.arg(internal_league_id), sqlc.arg(football_api_league_id), sqlc.arg(confidence), sqlc.arg(mapping_method)
 ) RETURNING *;
 
+-- name: CreateEnhancedLeagueMapping :one
+INSERT INTO league_mappings (
+    internal_league_id,
+    football_api_league_id,
+    confidence,
+    mapping_method,
+    translated_league_name,
+    translated_country,
+    original_league_name,
+    original_country,
+    match_factors,
+    needs_review,
+    ai_translation_used,
+    normalization_applied,
+    match_score
+) VALUES (
+    sqlc.arg(internal_league_id),
+    sqlc.arg(football_api_league_id),
+    sqlc.arg(confidence),
+    sqlc.arg(mapping_method),
+    sqlc.arg(translated_league_name),
+    sqlc.arg(translated_country),
+    sqlc.arg(original_league_name),
+    sqlc.arg(original_country),
+    sqlc.arg(match_factors),
+    sqlc.arg(needs_review),
+    sqlc.arg(ai_translation_used),
+    sqlc.arg(normalization_applied),
+    sqlc.arg(match_score)
+) RETURNING *;
+
 -- name: ListLeagueMappings :many
 SELECT * FROM league_mappings ORDER BY confidence DESC;
 
@@ -43,6 +74,41 @@ INSERT INTO team_mappings (
     mapping_method
 ) VALUES (
     sqlc.arg(internal_team_id), sqlc.arg(football_api_team_id), sqlc.arg(confidence), sqlc.arg(mapping_method)
+) RETURNING *;
+
+-- name: CreateEnhancedTeamMapping :one
+INSERT INTO team_mappings (
+    internal_team_id,
+    football_api_team_id,
+    confidence,
+    mapping_method,
+    translated_team_name,
+    translated_country,
+    translated_league,
+    original_team_name,
+    original_country,
+    original_league,
+    match_factors,
+    needs_review,
+    ai_translation_used,
+    normalization_applied,
+    match_score
+) VALUES (
+    sqlc.arg(internal_team_id),
+    sqlc.arg(football_api_team_id),
+    sqlc.arg(confidence),
+    sqlc.arg(mapping_method),
+    sqlc.arg(translated_team_name),
+    sqlc.arg(translated_country),
+    sqlc.arg(translated_league),
+    sqlc.arg(original_team_name),
+    sqlc.arg(original_country),
+    sqlc.arg(original_league),
+    sqlc.arg(match_factors),
+    sqlc.arg(needs_review),
+    sqlc.arg(ai_translation_used),
+    sqlc.arg(normalization_applied),
+    sqlc.arg(match_score)
 ) RETURNING *;
 
 -- name: ListTeamMappings :many
@@ -76,3 +142,37 @@ RETURNING *;
 
 -- name: DeleteLeague :exec
 DELETE FROM leagues WHERE id = sqlc.arg(id);
+
+-- name: EnrichLeagueWithAPIFootball :one
+UPDATE leagues SET
+    api_football_id = sqlc.arg(api_football_id),
+    league_type = sqlc.arg(league_type),
+    logo_url = sqlc.arg(logo_url),
+    country_code = sqlc.arg(country_code),
+    country_flag_url = sqlc.arg(country_flag_url),
+    has_standings = sqlc.arg(has_standings),
+    has_fixtures = sqlc.arg(has_fixtures),
+    has_players = sqlc.arg(has_players),
+    has_top_scorers = sqlc.arg(has_top_scorers),
+    has_injuries = sqlc.arg(has_injuries),
+    has_predictions = sqlc.arg(has_predictions),
+    has_odds = sqlc.arg(has_odds),
+    current_season_year = sqlc.arg(current_season_year),
+    current_season_start = sqlc.arg(current_season_start),
+    current_season_end = sqlc.arg(current_season_end),
+    api_enrichment_data = sqlc.arg(api_enrichment_data),
+    last_api_update = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- name: GetLeaguesByAPIFootballID :many
+SELECT * FROM leagues WHERE api_football_id = sqlc.arg(api_football_id);
+
+-- name: ListLeaguesForAPIEnrichment :many
+SELECT l.* FROM leagues l
+INNER JOIN league_mappings lm ON l.id = lm.internal_league_id
+WHERE l.last_api_update IS NULL 
+   OR l.last_api_update < NOW() - INTERVAL '7 days'
+ORDER BY l.updated_at ASC
+LIMIT sqlc.arg(limit_count);

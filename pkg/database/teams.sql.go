@@ -14,7 +14,7 @@ import (
 const createTeam = `-- name: CreateTeam :one
 INSERT INTO teams (external_id, name, country, logo_url)
 VALUES ($1, $2, $3, $4)
-RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
+RETURNING id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type CreateTeamParams struct {
@@ -40,14 +40,157 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 		&i.LogoUrl,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const enrichTeamWithAPIFootball = `-- name: EnrichTeamWithAPIFootball :one
+UPDATE teams 
+SET 
+    api_football_id = $1,
+    team_code = $2,
+    founded_year = $3,
+    is_national_team = $4,
+    venue_id = $5,
+    venue_name = $6,
+    venue_address = $7,
+    venue_city = $8,
+    venue_capacity = $9,
+    venue_surface = $10,
+    venue_image_url = $11,
+    api_enrichment_data = $12,
+    last_api_update = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $13
+RETURNING id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at
+`
+
+type EnrichTeamWithAPIFootballParams struct {
+	ApiFootballID     pgtype.Int4 `db:"api_football_id" json:"api_football_id"`
+	TeamCode          pgtype.Text `db:"team_code" json:"team_code"`
+	FoundedYear       pgtype.Int4 `db:"founded_year" json:"founded_year"`
+	IsNationalTeam    pgtype.Bool `db:"is_national_team" json:"is_national_team"`
+	VenueID           pgtype.Int4 `db:"venue_id" json:"venue_id"`
+	VenueName         pgtype.Text `db:"venue_name" json:"venue_name"`
+	VenueAddress      pgtype.Text `db:"venue_address" json:"venue_address"`
+	VenueCity         pgtype.Text `db:"venue_city" json:"venue_city"`
+	VenueCapacity     pgtype.Int4 `db:"venue_capacity" json:"venue_capacity"`
+	VenueSurface      pgtype.Text `db:"venue_surface" json:"venue_surface"`
+	VenueImageUrl     pgtype.Text `db:"venue_image_url" json:"venue_image_url"`
+	ApiEnrichmentData []byte      `db:"api_enrichment_data" json:"api_enrichment_data"`
+	ID                int32       `db:"id" json:"id"`
+}
+
+func (q *Queries) EnrichTeamWithAPIFootball(ctx context.Context, arg EnrichTeamWithAPIFootballParams) (Team, error) {
+	row := q.db.QueryRow(ctx, enrichTeamWithAPIFootball,
+		arg.ApiFootballID,
+		arg.TeamCode,
+		arg.FoundedYear,
+		arg.IsNationalTeam,
+		arg.VenueID,
+		arg.VenueName,
+		arg.VenueAddress,
+		arg.VenueCity,
+		arg.VenueCapacity,
+		arg.VenueSurface,
+		arg.VenueImageUrl,
+		arg.ApiEnrichmentData,
+		arg.ID,
+	)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.ExternalID,
+		&i.Name,
+		&i.Country,
+		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getNationalTeams = `-- name: GetNationalTeams :many
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
+WHERE is_national_team = true
+ORDER BY name
+`
+
+func (q *Queries) GetNationalTeams(ctx context.Context) ([]Team, error) {
+	rows, err := q.db.Query(ctx, getNationalTeams)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTeam = `-- name: GetTeam :one
-SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams WHERE id = $1
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams WHERE id = $1
 `
 
 func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
@@ -61,6 +204,19 @@ func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
 		&i.LogoUrl,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -68,7 +224,7 @@ func (q *Queries) GetTeam(ctx context.Context, id int32) (Team, error) {
 }
 
 const getTeamByExternalID = `-- name: GetTeamByExternalID :one
-SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams WHERE external_id = $1
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams WHERE external_id = $1
 `
 
 func (q *Queries) GetTeamByExternalID(ctx context.Context, externalID string) (Team, error) {
@@ -82,14 +238,223 @@ func (q *Queries) GetTeamByExternalID(ctx context.Context, externalID string) (T
 		&i.LogoUrl,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getTeamsByAPIFootballID = `-- name: GetTeamsByAPIFootballID :one
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams WHERE api_football_id = $1
+`
+
+func (q *Queries) GetTeamsByAPIFootballID(ctx context.Context, apiFootballID pgtype.Int4) (Team, error) {
+	row := q.db.QueryRow(ctx, getTeamsByAPIFootballID, apiFootballID)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.ExternalID,
+		&i.Name,
+		&i.Country,
+		&i.LogoUrl,
+		&i.IsActive,
+		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTeamsByFoundedRange = `-- name: GetTeamsByFoundedRange :many
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
+WHERE founded_year >= $1 
+  AND founded_year <= $2
+ORDER BY founded_year DESC, name
+`
+
+type GetTeamsByFoundedRangeParams struct {
+	MinYear pgtype.Int4 `db:"min_year" json:"min_year"`
+	MaxYear pgtype.Int4 `db:"max_year" json:"max_year"`
+}
+
+func (q *Queries) GetTeamsByFoundedRange(ctx context.Context, arg GetTeamsByFoundedRangeParams) ([]Team, error) {
+	rows, err := q.db.Query(ctx, getTeamsByFoundedRange, arg.MinYear, arg.MaxYear)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTeamsByVenueCapacity = `-- name: GetTeamsByVenueCapacity :many
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
+WHERE venue_capacity >= $1
+ORDER BY venue_capacity DESC, name
+LIMIT $2
+`
+
+type GetTeamsByVenueCapacityParams struct {
+	MinCapacity pgtype.Int4 `db:"min_capacity" json:"min_capacity"`
+	LimitCount  int32       `db:"limit_count" json:"limit_count"`
+}
+
+func (q *Queries) GetTeamsByVenueCapacity(ctx context.Context, arg GetTeamsByVenueCapacityParams) ([]Team, error) {
+	rows, err := q.db.Query(ctx, getTeamsByVenueCapacity, arg.MinCapacity, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTeamsNeedingEnrichment = `-- name: GetTeamsNeedingEnrichment :many
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
+WHERE api_football_id IS NULL 
+   OR last_api_update IS NULL 
+   OR last_api_update < (CURRENT_TIMESTAMP - INTERVAL '7 days')
+ORDER BY last_api_update ASC NULLS FIRST
+LIMIT $1
+`
+
+func (q *Queries) GetTeamsNeedingEnrichment(ctx context.Context, limitCount int32) ([]Team, error) {
+	rows, err := q.db.Query(ctx, getTeamsNeedingEnrichment, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchTeams = `-- name: SearchTeams :many
-SELECT id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at FROM teams 
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
 WHERE name ILIKE '%' || $1 || '%' 
 ORDER BY name
 LIMIT $2
@@ -117,6 +482,74 @@ func (q *Queries) SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Tea
 			&i.LogoUrl,
 			&i.IsActive,
 			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchTeamsByCode = `-- name: SearchTeamsByCode :many
+SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
+WHERE team_code ILIKE '%' || $1 || '%' 
+ORDER BY name
+LIMIT $2
+`
+
+type SearchTeamsByCodeParams struct {
+	CodeSearch pgtype.Text `db:"code_search" json:"code_search"`
+	LimitCount int32       `db:"limit_count" json:"limit_count"`
+}
+
+func (q *Queries) SearchTeamsByCode(ctx context.Context, arg SearchTeamsByCodeParams) ([]Team, error) {
+	rows, err := q.db.Query(ctx, searchTeamsByCode, arg.CodeSearch, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -134,7 +567,7 @@ const updateTeam = `-- name: UpdateTeam :one
 UPDATE teams 
 SET name = $1, country = $2, logo_url = $3, updated_at = CURRENT_TIMESTAMP
 WHERE id = $4
-RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
+RETURNING id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type UpdateTeamParams struct {
@@ -160,6 +593,19 @@ func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, e
 		&i.LogoUrl,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -174,7 +620,7 @@ ON CONFLICT (external_id) DO UPDATE SET
     country = EXCLUDED.country,
     logo_url = EXCLUDED.logo_url,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, external_id, name, country, logo_url, is_active, slug, created_at, updated_at
+RETURNING id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type UpsertTeamParams struct {
@@ -200,6 +646,19 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, e
 		&i.LogoUrl,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.TeamCode,
+		&i.FoundedYear,
+		&i.IsNationalTeam,
+		&i.VenueID,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCity,
+		&i.VenueCapacity,
+		&i.VenueSurface,
+		&i.VenueImageUrl,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

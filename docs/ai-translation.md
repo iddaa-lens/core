@@ -30,7 +30,7 @@ The AI translation is automatically used in the leagues sync job:
 ```bash
 # Run leagues sync with AI translation
 export DATABASE_URL="postgresql://iddaa:iddaa123@localhost:5433/iddaa_core?sslmode=disable"
-export FOOTBALL_API_KEY="your-football-api-key"
+export API_FOOTBALL_API_KEY="your-football-api-key"
 export OPENAI_API_KEY="your-openai-api-key"
 
 go run cmd/cron/main.go -job leagues -once

@@ -11,6 +11,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countEventsFiltered = `-- name: CountEventsFiltered :one
+SELECT COUNT(*)
+FROM events e
+JOIN teams ht ON e.home_team_id = ht.id
+JOIN teams at ON e.away_team_id = at.id
+JOIN leagues l ON e.league_id = l.id
+JOIN sports s ON e.sport_id = s.id
+WHERE e.event_date >= $1
+  AND e.event_date <= $2
+  AND ($3 = '' OR s.code = $3)
+  AND ($4 = '' OR l.name ILIKE '%' || $4 || '%')
+  AND ($5 = '' OR e.status = $5)
+`
+
+type CountEventsFilteredParams struct {
+	TimeAfter  pgtype.Timestamp `db:"time_after" json:"time_after"`
+	TimeBefore pgtype.Timestamp `db:"time_before" json:"time_before"`
+	SportCode  interface{}      `db:"sport_code" json:"sport_code"`
+	LeagueName interface{}      `db:"league_name" json:"league_name"`
+	Status     interface{}      `db:"status" json:"status"`
+}
+
+func (q *Queries) CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countEventsFiltered,
+		arg.TimeAfter,
+		arg.TimeBefore,
+		arg.SportCode,
+		arg.LeagueName,
+		arg.Status,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (external_id, league_id, home_team_id, away_team_id, event_date, status)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -409,6 +444,141 @@ func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) (
 			&i.HomeTeamName,
 			&i.AwayTeamName,
 			&i.LeagueName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsFiltered = `-- name: ListEventsFiltered :many
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+       ht.name as home_team_name,
+       ht.country as home_team_country,
+       at.name as away_team_name,
+       at.country as away_team_country,
+       l.name as league_name,
+       l.country as league_country,
+       s.name as sport_name,
+       s.code as sport_code
+FROM events e
+JOIN teams ht ON e.home_team_id = ht.id
+JOIN teams at ON e.away_team_id = at.id
+JOIN leagues l ON e.league_id = l.id
+JOIN sports s ON e.sport_id = s.id
+WHERE e.event_date >= $1
+  AND e.event_date <= $2
+  AND ($3 = '' OR s.code = $3)
+  AND ($4 = '' OR l.name ILIKE '%' || $4 || '%')
+  AND ($5 = '' OR e.status = $5)
+ORDER BY e.event_date ASC
+LIMIT $7
+OFFSET $6
+`
+
+type ListEventsFilteredParams struct {
+	TimeAfter   pgtype.Timestamp `db:"time_after" json:"time_after"`
+	TimeBefore  pgtype.Timestamp `db:"time_before" json:"time_before"`
+	SportCode   interface{}      `db:"sport_code" json:"sport_code"`
+	LeagueName  interface{}      `db:"league_name" json:"league_name"`
+	Status      interface{}      `db:"status" json:"status"`
+	OffsetCount int32            `db:"offset_count" json:"offset_count"`
+	LimitCount  int32            `db:"limit_count" json:"limit_count"`
+}
+
+type ListEventsFilteredRow struct {
+	ID                      int32            `db:"id" json:"id"`
+	ExternalID              string           `db:"external_id" json:"external_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
+	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	Slug                    string           `db:"slug" json:"slug"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	Status                  string           `db:"status" json:"status"`
+	HomeScore               pgtype.Int4      `db:"home_score" json:"home_score"`
+	AwayScore               pgtype.Int4      `db:"away_score" json:"away_score"`
+	IsLive                  pgtype.Bool      `db:"is_live" json:"is_live"`
+	MinuteOfMatch           pgtype.Int4      `db:"minute_of_match" json:"minute_of_match"`
+	Half                    pgtype.Int4      `db:"half" json:"half"`
+	BettingVolumePercentage pgtype.Numeric   `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	VolumeRank              pgtype.Int4      `db:"volume_rank" json:"volume_rank"`
+	VolumeUpdatedAt         pgtype.Timestamp `db:"volume_updated_at" json:"volume_updated_at"`
+	BulletinID              pgtype.Int8      `db:"bulletin_id" json:"bulletin_id"`
+	Version                 pgtype.Int8      `db:"version" json:"version"`
+	SportID                 pgtype.Int4      `db:"sport_id" json:"sport_id"`
+	BetProgram              pgtype.Int4      `db:"bet_program" json:"bet_program"`
+	Mbc                     pgtype.Int4      `db:"mbc" json:"mbc"`
+	HasKingOdd              pgtype.Bool      `db:"has_king_odd" json:"has_king_odd"`
+	OddsCount               pgtype.Int4      `db:"odds_count" json:"odds_count"`
+	HasCombine              pgtype.Bool      `db:"has_combine" json:"has_combine"`
+	CreatedAt               pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	HomeTeamName            string           `db:"home_team_name" json:"home_team_name"`
+	HomeTeamCountry         pgtype.Text      `db:"home_team_country" json:"home_team_country"`
+	AwayTeamName            string           `db:"away_team_name" json:"away_team_name"`
+	AwayTeamCountry         pgtype.Text      `db:"away_team_country" json:"away_team_country"`
+	LeagueName              string           `db:"league_name" json:"league_name"`
+	LeagueCountry           pgtype.Text      `db:"league_country" json:"league_country"`
+	SportName               string           `db:"sport_name" json:"sport_name"`
+	SportCode               string           `db:"sport_code" json:"sport_code"`
+}
+
+func (q *Queries) ListEventsFiltered(ctx context.Context, arg ListEventsFilteredParams) ([]ListEventsFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listEventsFiltered,
+		arg.TimeAfter,
+		arg.TimeBefore,
+		arg.SportCode,
+		arg.LeagueName,
+		arg.Status,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEventsFilteredRow{}
+	for rows.Next() {
+		var i ListEventsFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.LeagueID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
+			&i.Slug,
+			&i.EventDate,
+			&i.Status,
+			&i.HomeScore,
+			&i.AwayScore,
+			&i.IsLive,
+			&i.MinuteOfMatch,
+			&i.Half,
+			&i.BettingVolumePercentage,
+			&i.VolumeRank,
+			&i.VolumeUpdatedAt,
+			&i.BulletinID,
+			&i.Version,
+			&i.SportID,
+			&i.BetProgram,
+			&i.Mbc,
+			&i.HasKingOdd,
+			&i.OddsCount,
+			&i.HasCombine,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HomeTeamName,
+			&i.HomeTeamCountry,
+			&i.AwayTeamName,
+			&i.AwayTeamCountry,
+			&i.LeagueName,
+			&i.LeagueCountry,
+			&i.SportName,
+			&i.SportCode,
 		); err != nil {
 			return nil, err
 		}

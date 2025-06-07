@@ -82,3 +82,40 @@ ON CONFLICT (external_id) DO UPDATE SET
     is_live = EXCLUDED.is_live,
     updated_at = CURRENT_TIMESTAMP
 RETURNING *;
+
+-- name: ListEventsFiltered :many
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+       ht.name as home_team_name,
+       ht.country as home_team_country,
+       at.name as away_team_name,
+       at.country as away_team_country,
+       l.name as league_name,
+       l.country as league_country,
+       s.name as sport_name,
+       s.code as sport_code
+FROM events e
+JOIN teams ht ON e.home_team_id = ht.id
+JOIN teams at ON e.away_team_id = at.id
+JOIN leagues l ON e.league_id = l.id
+JOIN sports s ON e.sport_id = s.id
+WHERE e.event_date >= sqlc.arg(time_after)
+  AND e.event_date <= sqlc.arg(time_before)
+  AND (sqlc.arg(sport_code) = '' OR s.code = sqlc.arg(sport_code))
+  AND (sqlc.arg(league_name) = '' OR l.name ILIKE '%' || sqlc.arg(league_name) || '%')
+  AND (sqlc.arg(status) = '' OR e.status = sqlc.arg(status))
+ORDER BY e.event_date ASC
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);
+
+-- name: CountEventsFiltered :one
+SELECT COUNT(*)
+FROM events e
+JOIN teams ht ON e.home_team_id = ht.id
+JOIN teams at ON e.away_team_id = at.id
+JOIN leagues l ON e.league_id = l.id
+JOIN sports s ON e.sport_id = s.id
+WHERE e.event_date >= sqlc.arg(time_after)
+  AND e.event_date <= sqlc.arg(time_before)
+  AND (sqlc.arg(sport_code) = '' OR s.code = sqlc.arg(sport_code))
+  AND (sqlc.arg(league_name) = '' OR l.name ILIKE '%' || sqlc.arg(league_name) || '%')
+  AND (sqlc.arg(status) = '' OR e.status = sqlc.arg(status));

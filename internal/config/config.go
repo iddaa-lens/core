@@ -39,9 +39,9 @@ func Load() *Config {
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "5432"),
+			Port:     getEnv("DB_PORT", "5433"),
 			User:     getEnv("DB_USER", "iddaa"),
-			Password: getEnv("DB_PASSWORD", ""),
+			Password: getEnv("DB_PASSWORD", "iddaa123"),
 			DBName:   getEnv("DB_NAME", "iddaa_core"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},

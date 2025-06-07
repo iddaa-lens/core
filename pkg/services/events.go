@@ -56,7 +56,17 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 		}
 
 		// Convert Unix timestamp to time (iddaa returns seconds, not milliseconds)
+		// IMPORTANT: Iddaa API provides timestamps that are already in UTC
+		// No timezone conversion needed - the timestamps are correct as-is
+
 		eventDate := time.Unix(event.Date, 0)
+
+		s.logger.Debug().
+			Int64("original_unix", event.Date).
+			Str("utc_time", eventDate.UTC().Format("2006-01-02 15:04:05 UTC")).
+			Str("will_display_in_la", eventDate.In(time.FixedZone("PDT", -7*3600)).Format("2006-01-02 15:04:05 PDT")).
+			Int("event_id", event.ID).
+			Msg("Using Iddaa UTC timestamp directly")
 
 		// Convert status to string
 		statusStr := s.convertEventStatus(event.Status)

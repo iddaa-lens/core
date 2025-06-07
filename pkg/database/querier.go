@@ -13,8 +13,11 @@ import (
 type Querier interface {
 	// Analyze correlation between volume and odds movement
 	AnalyzeVolumeOddsPattern(ctx context.Context) ([]byte, error)
+	CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int64, error)
 	CreateConfig(ctx context.Context, arg CreateConfigParams) (AppConfig, error)
 	CreateDistributionHistory(ctx context.Context, arg CreateDistributionHistoryParams) (OutcomeDistributionHistory, error)
+	CreateEnhancedLeagueMapping(ctx context.Context, arg CreateEnhancedLeagueMappingParams) (LeagueMapping, error)
+	CreateEnhancedTeamMapping(ctx context.Context, arg CreateEnhancedTeamMappingParams) (TeamMapping, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateLeagueMapping(ctx context.Context, arg CreateLeagueMappingParams) (LeagueMapping, error)
 	CreateMatchEvent(ctx context.Context, arg CreateMatchEventParams) (MatchEvent, error)
@@ -24,6 +27,8 @@ type Querier interface {
 	CreateTeamMapping(ctx context.Context, arg CreateTeamMappingParams) (TeamMapping, error)
 	CreateVolumeHistory(ctx context.Context, arg CreateVolumeHistoryParams) (BettingVolumeHistory, error)
 	DeleteLeague(ctx context.Context, id int32) error
+	EnrichLeagueWithAPIFootball(ctx context.Context, arg EnrichLeagueWithAPIFootballParams) (League, error)
+	EnrichTeamWithAPIFootball(ctx context.Context, arg EnrichTeamWithAPIFootballParams) (Team, error)
 	GetActiveEventsForDetailedSync(ctx context.Context, limitCount int32) ([]Event, error)
 	GetBigMovers(ctx context.Context, arg GetBigMoversParams) ([]GetBigMoversRow, error)
 	GetContrarianBets(ctx context.Context) ([]ContrarianBet, error)
@@ -47,11 +52,13 @@ type Querier interface {
 	GetLeague(ctx context.Context, id int32) (League, error)
 	GetLeagueByExternalID(ctx context.Context, externalID string) (League, error)
 	GetLeagueMapping(ctx context.Context, internalLeagueID int32) (LeagueMapping, error)
+	GetLeaguesByAPIFootballID(ctx context.Context, apiFootballID pgtype.Int4) ([]League, error)
 	GetLiveEvents(ctx context.Context) ([]GetLiveEventsRow, error)
 	GetMarketType(ctx context.Context, code string) (MarketType, error)
 	GetMarketTypeByID(ctx context.Context, id int32) (MarketType, error)
 	GetMatchEvents(ctx context.Context, eventID pgtype.Int4) ([]MatchEvent, error)
 	GetMatchStatistics(ctx context.Context, eventID pgtype.Int4) ([]MatchStatistic, error)
+	GetNationalTeams(ctx context.Context) ([]Team, error)
 	// Get odds changes for a specific market
 	GetOddsChangesByMarket(ctx context.Context, arg GetOddsChangesByMarketParams) ([]GetOddsChangesByMarketRow, error)
 	// Get full odds history for a specific event
@@ -68,14 +75,20 @@ type Querier interface {
 	GetTeam(ctx context.Context, id int32) (Team, error)
 	GetTeamByExternalID(ctx context.Context, externalID string) (Team, error)
 	GetTeamMapping(ctx context.Context, internalTeamID int32) (TeamMapping, error)
+	GetTeamsByAPIFootballID(ctx context.Context, apiFootballID pgtype.Int4) (Team, error)
+	GetTeamsByFoundedRange(ctx context.Context, arg GetTeamsByFoundedRangeParams) ([]Team, error)
+	GetTeamsByVenueCapacity(ctx context.Context, arg GetTeamsByVenueCapacityParams) ([]Team, error)
+	GetTeamsNeedingEnrichment(ctx context.Context, limitCount int32) ([]Team, error)
 	GetTopDistributions(ctx context.Context, limitCount int32) ([]OutcomeDistribution, error)
 	// Get current top events by betting volume
 	GetTopVolumeEvents(ctx context.Context) ([]GetTopVolumeEventsRow, error)
 	// Get volume history for a specific event
 	GetVolumeHistory(ctx context.Context, eventID pgtype.Int4) ([]GetVolumeHistoryRow, error)
 	ListEventsByDate(ctx context.Context, eventDate interface{}) ([]ListEventsByDateRow, error)
+	ListEventsFiltered(ctx context.Context, arg ListEventsFilteredParams) ([]ListEventsFilteredRow, error)
 	ListLeagueMappings(ctx context.Context) ([]LeagueMapping, error)
 	ListLeagues(ctx context.Context) ([]League, error)
+	ListLeaguesForAPIEnrichment(ctx context.Context, limitCount int32) ([]League, error)
 	ListMarketTypes(ctx context.Context) ([]MarketType, error)
 	ListSports(ctx context.Context) ([]Sport, error)
 	ListTeamMappings(ctx context.Context) ([]TeamMapping, error)
@@ -84,6 +97,7 @@ type Querier interface {
 	ListUnmappedLeagues(ctx context.Context) ([]League, error)
 	RefreshContrarianBets(ctx context.Context) error
 	SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Team, error)
+	SearchTeamsByCode(ctx context.Context, arg SearchTeamsByCodeParams) ([]Team, error)
 	UpdateEventLiveData(ctx context.Context, arg UpdateEventLiveDataParams) (Event, error)
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) (Event, error)
 	UpdateEventVolume(ctx context.Context, arg UpdateEventVolumeParams) (Event, error)

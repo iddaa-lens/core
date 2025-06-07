@@ -148,6 +148,11 @@ type TeamMapping struct {
 	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// Type aliases for league enrichment
+type APIFootballLeagueDetail = FootballAPILeagueData
+type FootballAPILeagueDetailResponse = FootballAPILeaguesResponse
+type Season = FootballAPISeason
+
 // SearchResult represents a search result with similarity score
 type SearchResult struct {
 	ID         int     `json:"id"`

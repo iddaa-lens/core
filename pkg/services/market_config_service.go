@@ -24,7 +24,7 @@ func NewMarketConfigService(db *database.Queries, client *IddaaClient) *MarketCo
 
 func (s *MarketConfigService) SyncMarketConfigs(ctx context.Context) error {
 	log := logger.WithContext(ctx, "market-config-sync")
-	
+
 	log.Info().
 		Str("action", "sync_start").
 		Msg("Starting market config sync")

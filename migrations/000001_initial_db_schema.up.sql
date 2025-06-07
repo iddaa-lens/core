@@ -27,6 +27,24 @@ CREATE TABLE IF NOT EXISTS leagues (
     sport_id INTEGER REFERENCES sports(id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT true,
     slug VARCHAR(255),
+    -- API-Football enrichment fields
+    api_football_id INTEGER,
+    league_type VARCHAR(50), -- 'League', 'Cup', etc.
+    logo_url TEXT,
+    country_code VARCHAR(10), -- 'GB', 'TR', etc.
+    country_flag_url TEXT,
+    has_standings BOOLEAN DEFAULT false,
+    has_fixtures BOOLEAN DEFAULT false,
+    has_players BOOLEAN DEFAULT false,
+    has_top_scorers BOOLEAN DEFAULT false,
+    has_injuries BOOLEAN DEFAULT false,
+    has_predictions BOOLEAN DEFAULT false,
+    has_odds BOOLEAN DEFAULT false,
+    current_season_year INTEGER,
+    current_season_start DATE,
+    current_season_end DATE,
+    api_enrichment_data JSONB, -- Store full API response for flexibility
+    last_api_update TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -40,6 +58,20 @@ CREATE TABLE IF NOT EXISTS teams (
     logo_url TEXT,
     is_active BOOLEAN DEFAULT true,
     slug VARCHAR(255),
+    -- API-Football enrichment fields
+    api_football_id INTEGER,
+    team_code VARCHAR(10), -- 'MUN', 'FCB', etc.
+    founded_year INTEGER,
+    is_national_team BOOLEAN DEFAULT false,
+    venue_id INTEGER,
+    venue_name VARCHAR(255),
+    venue_address TEXT,
+    venue_city VARCHAR(100),
+    venue_capacity INTEGER,
+    venue_surface VARCHAR(50), -- 'grass', 'artificial', etc.
+    venue_image_url TEXT,
+    api_enrichment_data JSONB, -- Store full API response for flexibility
+    last_api_update TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -220,6 +252,16 @@ CREATE TABLE IF NOT EXISTS league_mappings (
     football_api_league_id INTEGER NOT NULL,
     confidence DECIMAL(3,2) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     mapping_method VARCHAR(50) NOT NULL,
+    -- Enhanced translation tracking fields
+    translated_league_name TEXT,
+    translated_country TEXT,
+    original_league_name TEXT,
+    original_country TEXT,
+    match_factors JSONB,
+    needs_review BOOLEAN DEFAULT FALSE,
+    ai_translation_used BOOLEAN DEFAULT FALSE,
+    normalization_applied BOOLEAN DEFAULT FALSE,
+    match_score DECIMAL(5,4) DEFAULT 0.0000 CHECK (match_score >= 0.0000 AND match_score <= 1.0000),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(internal_league_id)
@@ -232,6 +274,18 @@ CREATE TABLE IF NOT EXISTS team_mappings (
     football_api_team_id INTEGER NOT NULL,
     confidence DECIMAL(3,2) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     mapping_method VARCHAR(50) NOT NULL,
+    -- Enhanced translation tracking fields
+    translated_team_name TEXT,
+    translated_country TEXT,
+    translated_league TEXT,
+    original_team_name TEXT,
+    original_country TEXT,
+    original_league TEXT,
+    match_factors JSONB,
+    needs_review BOOLEAN DEFAULT FALSE,
+    ai_translation_used BOOLEAN DEFAULT FALSE,
+    normalization_applied BOOLEAN DEFAULT FALSE,
+    match_score DECIMAL(5,4) DEFAULT 0.0000 CHECK (match_score >= 0.0000 AND match_score <= 1.0000),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(internal_team_id),
@@ -255,9 +309,22 @@ CREATE INDEX IF NOT EXISTS idx_leagues_sport_id ON leagues(sport_id);
 CREATE INDEX IF NOT EXISTS idx_leagues_external_id ON leagues(external_id);
 CREATE INDEX IF NOT EXISTS idx_leagues_is_active ON leagues(is_active);
 CREATE INDEX IF NOT EXISTS idx_leagues_slug ON leagues(slug);
+CREATE INDEX IF NOT EXISTS idx_leagues_api_football_id ON leagues(api_football_id);
+CREATE INDEX IF NOT EXISTS idx_leagues_country_code ON leagues(country_code);
+CREATE INDEX IF NOT EXISTS idx_leagues_league_type ON leagues(league_type);
+CREATE INDEX IF NOT EXISTS idx_leagues_current_season ON leagues(current_season_year);
+CREATE INDEX IF NOT EXISTS idx_leagues_api_enrichment ON leagues USING GIN(api_enrichment_data);
 
 CREATE INDEX IF NOT EXISTS idx_teams_external_id ON teams(external_id);
 CREATE INDEX IF NOT EXISTS idx_teams_slug ON teams(slug);
+CREATE INDEX IF NOT EXISTS idx_teams_api_football_id ON teams(api_football_id);
+CREATE INDEX IF NOT EXISTS idx_teams_team_code ON teams(team_code);
+CREATE INDEX IF NOT EXISTS idx_teams_country ON teams(country);
+CREATE INDEX IF NOT EXISTS idx_teams_is_national ON teams(is_national_team);
+CREATE INDEX IF NOT EXISTS idx_teams_venue_id ON teams(venue_id);
+CREATE INDEX IF NOT EXISTS idx_teams_founded_year ON teams(founded_year);
+CREATE INDEX IF NOT EXISTS idx_teams_api_enrichment ON teams USING GIN(api_enrichment_data);
+CREATE INDEX IF NOT EXISTS idx_teams_last_api_update ON teams(last_api_update);
 
 CREATE INDEX IF NOT EXISTS idx_events_league_id ON events(league_id);
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
@@ -279,10 +346,20 @@ CREATE INDEX IF NOT EXISTS idx_outcome_dist_event ON outcome_distributions(event
 CREATE INDEX IF NOT EXISTS idx_league_mappings_internal_league_id ON league_mappings(internal_league_id);
 CREATE INDEX IF NOT EXISTS idx_league_mappings_football_api_league_id ON league_mappings(football_api_league_id);
 CREATE INDEX IF NOT EXISTS idx_league_mappings_confidence ON league_mappings(confidence);
+CREATE INDEX IF NOT EXISTS idx_league_mappings_translated_name ON league_mappings(translated_league_name);
+CREATE INDEX IF NOT EXISTS idx_league_mappings_needs_review ON league_mappings(needs_review);
+CREATE INDEX IF NOT EXISTS idx_league_mappings_match_score ON league_mappings(match_score DESC);
+CREATE INDEX IF NOT EXISTS idx_league_mappings_ai_translation ON league_mappings(ai_translation_used);
+CREATE INDEX IF NOT EXISTS idx_league_mappings_match_factors ON league_mappings USING GIN(match_factors);
 
 CREATE INDEX IF NOT EXISTS idx_team_mappings_internal_team_id ON team_mappings(internal_team_id);
 CREATE INDEX IF NOT EXISTS idx_team_mappings_football_api_team_id ON team_mappings(football_api_team_id);
 CREATE INDEX IF NOT EXISTS idx_team_mappings_confidence ON team_mappings(confidence);
+CREATE INDEX IF NOT EXISTS idx_team_mappings_translated_name ON team_mappings(translated_team_name);
+CREATE INDEX IF NOT EXISTS idx_team_mappings_needs_review ON team_mappings(needs_review);
+CREATE INDEX IF NOT EXISTS idx_team_mappings_match_score ON team_mappings(match_score DESC);
+CREATE INDEX IF NOT EXISTS idx_team_mappings_ai_translation ON team_mappings(ai_translation_used);
+CREATE INDEX IF NOT EXISTS idx_team_mappings_match_factors ON team_mappings USING GIN(match_factors);
 
 -- Create improved slug normalization function
 -- This matches the gosimple/slug library behavior for consistent results

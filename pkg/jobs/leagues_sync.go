@@ -19,7 +19,7 @@ type LeaguesSyncJob struct {
 
 func NewLeaguesSyncJob(db *database.Queries, iddaaClient *services.IddaaClient) *LeaguesSyncJob {
 	// Get Football API key from environment
-	apiKey := os.Getenv("FOOTBALL_API_KEY")
+	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
 	// Note: Missing API keys will be logged when job executes
 
 	// Get OpenAI API key from environment
@@ -92,12 +92,12 @@ func (j *LeaguesSyncJob) Execute(ctx context.Context) error {
 		Msg("Iddaa leagues sync completed")
 
 	// Step 2: Check if Football API key is available for additional enrichment
-	apiKey := os.Getenv("FOOTBALL_API_KEY")
+	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
 	if apiKey == "" {
 		log.Warn().
 			Str("action", "api_key_missing").
 			Str("api", "football_api").
-			Msg("FOOTBALL_API_KEY not set, skipping Football API sync")
+			Msg("API_FOOTBALL_API_KEY not set, skipping Football API sync")
 
 		duration := time.Since(start)
 		log.LogJobComplete("leagues_sync", duration, completedSteps, errorCount)

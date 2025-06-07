@@ -104,25 +104,51 @@ type Event struct {
 }
 
 type League struct {
-	ID         int32            `db:"id" json:"id"`
-	ExternalID string           `db:"external_id" json:"external_id"`
-	Name       string           `db:"name" json:"name"`
-	Country    pgtype.Text      `db:"country" json:"country"`
-	SportID    pgtype.Int4      `db:"sport_id" json:"sport_id"`
-	IsActive   pgtype.Bool      `db:"is_active" json:"is_active"`
-	Slug       pgtype.Text      `db:"slug" json:"slug"`
-	CreatedAt  pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt  pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	ID                 int32            `db:"id" json:"id"`
+	ExternalID         string           `db:"external_id" json:"external_id"`
+	Name               string           `db:"name" json:"name"`
+	Country            pgtype.Text      `db:"country" json:"country"`
+	SportID            pgtype.Int4      `db:"sport_id" json:"sport_id"`
+	IsActive           pgtype.Bool      `db:"is_active" json:"is_active"`
+	Slug               pgtype.Text      `db:"slug" json:"slug"`
+	ApiFootballID      pgtype.Int4      `db:"api_football_id" json:"api_football_id"`
+	LeagueType         pgtype.Text      `db:"league_type" json:"league_type"`
+	LogoUrl            pgtype.Text      `db:"logo_url" json:"logo_url"`
+	CountryCode        pgtype.Text      `db:"country_code" json:"country_code"`
+	CountryFlagUrl     pgtype.Text      `db:"country_flag_url" json:"country_flag_url"`
+	HasStandings       pgtype.Bool      `db:"has_standings" json:"has_standings"`
+	HasFixtures        pgtype.Bool      `db:"has_fixtures" json:"has_fixtures"`
+	HasPlayers         pgtype.Bool      `db:"has_players" json:"has_players"`
+	HasTopScorers      pgtype.Bool      `db:"has_top_scorers" json:"has_top_scorers"`
+	HasInjuries        pgtype.Bool      `db:"has_injuries" json:"has_injuries"`
+	HasPredictions     pgtype.Bool      `db:"has_predictions" json:"has_predictions"`
+	HasOdds            pgtype.Bool      `db:"has_odds" json:"has_odds"`
+	CurrentSeasonYear  pgtype.Int4      `db:"current_season_year" json:"current_season_year"`
+	CurrentSeasonStart pgtype.Date      `db:"current_season_start" json:"current_season_start"`
+	CurrentSeasonEnd   pgtype.Date      `db:"current_season_end" json:"current_season_end"`
+	ApiEnrichmentData  []byte           `db:"api_enrichment_data" json:"api_enrichment_data"`
+	LastApiUpdate      pgtype.Timestamp `db:"last_api_update" json:"last_api_update"`
+	CreatedAt          pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
 type LeagueMapping struct {
-	ID                  int32            `db:"id" json:"id"`
-	InternalLeagueID    int32            `db:"internal_league_id" json:"internal_league_id"`
-	FootballApiLeagueID int32            `db:"football_api_league_id" json:"football_api_league_id"`
-	Confidence          pgtype.Numeric   `db:"confidence" json:"confidence"`
-	MappingMethod       string           `db:"mapping_method" json:"mapping_method"`
-	CreatedAt           pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt           pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	ID                   int32            `db:"id" json:"id"`
+	InternalLeagueID     int32            `db:"internal_league_id" json:"internal_league_id"`
+	FootballApiLeagueID  int32            `db:"football_api_league_id" json:"football_api_league_id"`
+	Confidence           pgtype.Numeric   `db:"confidence" json:"confidence"`
+	MappingMethod        string           `db:"mapping_method" json:"mapping_method"`
+	TranslatedLeagueName pgtype.Text      `db:"translated_league_name" json:"translated_league_name"`
+	TranslatedCountry    pgtype.Text      `db:"translated_country" json:"translated_country"`
+	OriginalLeagueName   pgtype.Text      `db:"original_league_name" json:"original_league_name"`
+	OriginalCountry      pgtype.Text      `db:"original_country" json:"original_country"`
+	MatchFactors         []byte           `db:"match_factors" json:"match_factors"`
+	NeedsReview          pgtype.Bool      `db:"needs_review" json:"needs_review"`
+	AiTranslationUsed    pgtype.Bool      `db:"ai_translation_used" json:"ai_translation_used"`
+	NormalizationApplied pgtype.Bool      `db:"normalization_applied" json:"normalization_applied"`
+	MatchScore           pgtype.Numeric   `db:"match_score" json:"match_score"`
+	CreatedAt            pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
 type MarketType struct {
@@ -244,23 +270,47 @@ type Sport struct {
 }
 
 type Team struct {
-	ID         int32            `db:"id" json:"id"`
-	ExternalID string           `db:"external_id" json:"external_id"`
-	Name       string           `db:"name" json:"name"`
-	Country    pgtype.Text      `db:"country" json:"country"`
-	LogoUrl    pgtype.Text      `db:"logo_url" json:"logo_url"`
-	IsActive   pgtype.Bool      `db:"is_active" json:"is_active"`
-	Slug       pgtype.Text      `db:"slug" json:"slug"`
-	CreatedAt  pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt  pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	ID                int32            `db:"id" json:"id"`
+	ExternalID        string           `db:"external_id" json:"external_id"`
+	Name              string           `db:"name" json:"name"`
+	Country           pgtype.Text      `db:"country" json:"country"`
+	LogoUrl           pgtype.Text      `db:"logo_url" json:"logo_url"`
+	IsActive          pgtype.Bool      `db:"is_active" json:"is_active"`
+	Slug              pgtype.Text      `db:"slug" json:"slug"`
+	ApiFootballID     pgtype.Int4      `db:"api_football_id" json:"api_football_id"`
+	TeamCode          pgtype.Text      `db:"team_code" json:"team_code"`
+	FoundedYear       pgtype.Int4      `db:"founded_year" json:"founded_year"`
+	IsNationalTeam    pgtype.Bool      `db:"is_national_team" json:"is_national_team"`
+	VenueID           pgtype.Int4      `db:"venue_id" json:"venue_id"`
+	VenueName         pgtype.Text      `db:"venue_name" json:"venue_name"`
+	VenueAddress      pgtype.Text      `db:"venue_address" json:"venue_address"`
+	VenueCity         pgtype.Text      `db:"venue_city" json:"venue_city"`
+	VenueCapacity     pgtype.Int4      `db:"venue_capacity" json:"venue_capacity"`
+	VenueSurface      pgtype.Text      `db:"venue_surface" json:"venue_surface"`
+	VenueImageUrl     pgtype.Text      `db:"venue_image_url" json:"venue_image_url"`
+	ApiEnrichmentData []byte           `db:"api_enrichment_data" json:"api_enrichment_data"`
+	LastApiUpdate     pgtype.Timestamp `db:"last_api_update" json:"last_api_update"`
+	CreatedAt         pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt         pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
 type TeamMapping struct {
-	ID                int32            `db:"id" json:"id"`
-	InternalTeamID    int32            `db:"internal_team_id" json:"internal_team_id"`
-	FootballApiTeamID int32            `db:"football_api_team_id" json:"football_api_team_id"`
-	Confidence        pgtype.Numeric   `db:"confidence" json:"confidence"`
-	MappingMethod     string           `db:"mapping_method" json:"mapping_method"`
-	CreatedAt         pgtype.Timestamp `db:"created_at" json:"created_at"`
-	UpdatedAt         pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	ID                   int32            `db:"id" json:"id"`
+	InternalTeamID       int32            `db:"internal_team_id" json:"internal_team_id"`
+	FootballApiTeamID    int32            `db:"football_api_team_id" json:"football_api_team_id"`
+	Confidence           pgtype.Numeric   `db:"confidence" json:"confidence"`
+	MappingMethod        string           `db:"mapping_method" json:"mapping_method"`
+	TranslatedTeamName   pgtype.Text      `db:"translated_team_name" json:"translated_team_name"`
+	TranslatedCountry    pgtype.Text      `db:"translated_country" json:"translated_country"`
+	TranslatedLeague     pgtype.Text      `db:"translated_league" json:"translated_league"`
+	OriginalTeamName     pgtype.Text      `db:"original_team_name" json:"original_team_name"`
+	OriginalCountry      pgtype.Text      `db:"original_country" json:"original_country"`
+	OriginalLeague       pgtype.Text      `db:"original_league" json:"original_league"`
+	MatchFactors         []byte           `db:"match_factors" json:"match_factors"`
+	NeedsReview          pgtype.Bool      `db:"needs_review" json:"needs_review"`
+	AiTranslationUsed    pgtype.Bool      `db:"ai_translation_used" json:"ai_translation_used"`
+	NormalizationApplied pgtype.Bool      `db:"normalization_applied" json:"normalization_applied"`
+	MatchScore           pgtype.Numeric   `db:"match_score" json:"match_score"`
+	CreatedAt            pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt            pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }

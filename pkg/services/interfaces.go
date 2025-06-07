@@ -16,7 +16,7 @@ type CompetitionSyncer interface {
 type IddaaClientInterface interface {
 	GetSingleEvent(eventID int) (*models.IddaaSingleEventResponse, error)
 	GetSportInfo() (*models.IddaaAPIResponse[models.IddaaSportInfo], error)
-	GetEvents(sportID int) (*models.IddaaAPIResponse[models.IddaaEvent], error)
+	GetEvents(sportID int) (*models.IddaaEventsResponse, error)
 }
 
 // EventsServiceInterface defines the interface for events service

@@ -2,12 +2,10 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/iddaa-lens/core/pkg/logger"
-	"github.com/iddaa-lens/core/pkg/models"
 	"github.com/iddaa-lens/core/pkg/services"
 )
 
@@ -64,10 +62,8 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 			Int("sport_id", int(sport.ID)).
 			Msg("Fetching events for sport")
 
-		// Fetch events from iddaa API for this sport
-		url := fmt.Sprintf("https://sportsbookv2.iddaa.com/sportsbook/events?st=%d&type=0&version=0", sport.ID)
-
-		data, err := j.iddaaClient.FetchData(url)
+		// Fetch live events from iddaa API for this sport using type=1
+		response, err := j.iddaaClient.GetEvents(int(sport.ID))
 		if err != nil {
 			errorCount++
 			log.Error().
@@ -75,26 +71,12 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 				Str("action", "fetch_failed").
 				Str("sport_name", sport.Name).
 				Int("sport_id", int(sport.ID)).
-				Str("url", url).
-				Msg("Failed to fetch events")
-			continue // Continue with other sports
-		}
-
-		// Parse the response
-		var response models.IddaaEventsResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			errorCount++
-			log.Error().
-				Err(err).
-				Str("action", "unmarshal_failed").
-				Str("sport_name", sport.Name).
-				Int("sport_id", int(sport.ID)).
-				Msg("Failed to unmarshal events response")
+				Msg("Failed to fetch live events")
 			continue // Continue with other sports
 		}
 
 		// Process and store the events
-		if err := j.eventsService.ProcessEventsResponse(ctx, &response); err != nil {
+		if err := j.eventsService.ProcessEventsResponse(ctx, response); err != nil {
 			errorCount++
 			log.Error().
 				Err(err).
@@ -105,7 +87,10 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 			continue // Continue with other sports
 		}
 
-		eventCount := len(response.Data.Events)
+		eventCount := 0
+		if response.Data != nil {
+			eventCount = len(response.Data.Events)
+		}
 		totalEvents += eventCount
 		log.Info().
 			Str("action", "sport_sync_complete").

@@ -11,6 +11,188 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createEnhancedLeagueMapping = `-- name: CreateEnhancedLeagueMapping :one
+INSERT INTO league_mappings (
+    internal_league_id,
+    football_api_league_id,
+    confidence,
+    mapping_method,
+    translated_league_name,
+    translated_country,
+    original_league_name,
+    original_country,
+    match_factors,
+    needs_review,
+    ai_translation_used,
+    normalization_applied,
+    match_score
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13
+) RETURNING id, internal_league_id, football_api_league_id, confidence, mapping_method, translated_league_name, translated_country, original_league_name, original_country, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
+`
+
+type CreateEnhancedLeagueMappingParams struct {
+	InternalLeagueID     int32          `db:"internal_league_id" json:"internal_league_id"`
+	FootballApiLeagueID  int32          `db:"football_api_league_id" json:"football_api_league_id"`
+	Confidence           pgtype.Numeric `db:"confidence" json:"confidence"`
+	MappingMethod        string         `db:"mapping_method" json:"mapping_method"`
+	TranslatedLeagueName pgtype.Text    `db:"translated_league_name" json:"translated_league_name"`
+	TranslatedCountry    pgtype.Text    `db:"translated_country" json:"translated_country"`
+	OriginalLeagueName   pgtype.Text    `db:"original_league_name" json:"original_league_name"`
+	OriginalCountry      pgtype.Text    `db:"original_country" json:"original_country"`
+	MatchFactors         []byte         `db:"match_factors" json:"match_factors"`
+	NeedsReview          pgtype.Bool    `db:"needs_review" json:"needs_review"`
+	AiTranslationUsed    pgtype.Bool    `db:"ai_translation_used" json:"ai_translation_used"`
+	NormalizationApplied pgtype.Bool    `db:"normalization_applied" json:"normalization_applied"`
+	MatchScore           pgtype.Numeric `db:"match_score" json:"match_score"`
+}
+
+func (q *Queries) CreateEnhancedLeagueMapping(ctx context.Context, arg CreateEnhancedLeagueMappingParams) (LeagueMapping, error) {
+	row := q.db.QueryRow(ctx, createEnhancedLeagueMapping,
+		arg.InternalLeagueID,
+		arg.FootballApiLeagueID,
+		arg.Confidence,
+		arg.MappingMethod,
+		arg.TranslatedLeagueName,
+		arg.TranslatedCountry,
+		arg.OriginalLeagueName,
+		arg.OriginalCountry,
+		arg.MatchFactors,
+		arg.NeedsReview,
+		arg.AiTranslationUsed,
+		arg.NormalizationApplied,
+		arg.MatchScore,
+	)
+	var i LeagueMapping
+	err := row.Scan(
+		&i.ID,
+		&i.InternalLeagueID,
+		&i.FootballApiLeagueID,
+		&i.Confidence,
+		&i.MappingMethod,
+		&i.TranslatedLeagueName,
+		&i.TranslatedCountry,
+		&i.OriginalLeagueName,
+		&i.OriginalCountry,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createEnhancedTeamMapping = `-- name: CreateEnhancedTeamMapping :one
+INSERT INTO team_mappings (
+    internal_team_id,
+    football_api_team_id,
+    confidence,
+    mapping_method,
+    translated_team_name,
+    translated_country,
+    translated_league,
+    original_team_name,
+    original_country,
+    original_league,
+    match_factors,
+    needs_review,
+    ai_translation_used,
+    normalization_applied,
+    match_score
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15
+) RETURNING id, internal_team_id, football_api_team_id, confidence, mapping_method, translated_team_name, translated_country, translated_league, original_team_name, original_country, original_league, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
+`
+
+type CreateEnhancedTeamMappingParams struct {
+	InternalTeamID       int32          `db:"internal_team_id" json:"internal_team_id"`
+	FootballApiTeamID    int32          `db:"football_api_team_id" json:"football_api_team_id"`
+	Confidence           pgtype.Numeric `db:"confidence" json:"confidence"`
+	MappingMethod        string         `db:"mapping_method" json:"mapping_method"`
+	TranslatedTeamName   pgtype.Text    `db:"translated_team_name" json:"translated_team_name"`
+	TranslatedCountry    pgtype.Text    `db:"translated_country" json:"translated_country"`
+	TranslatedLeague     pgtype.Text    `db:"translated_league" json:"translated_league"`
+	OriginalTeamName     pgtype.Text    `db:"original_team_name" json:"original_team_name"`
+	OriginalCountry      pgtype.Text    `db:"original_country" json:"original_country"`
+	OriginalLeague       pgtype.Text    `db:"original_league" json:"original_league"`
+	MatchFactors         []byte         `db:"match_factors" json:"match_factors"`
+	NeedsReview          pgtype.Bool    `db:"needs_review" json:"needs_review"`
+	AiTranslationUsed    pgtype.Bool    `db:"ai_translation_used" json:"ai_translation_used"`
+	NormalizationApplied pgtype.Bool    `db:"normalization_applied" json:"normalization_applied"`
+	MatchScore           pgtype.Numeric `db:"match_score" json:"match_score"`
+}
+
+func (q *Queries) CreateEnhancedTeamMapping(ctx context.Context, arg CreateEnhancedTeamMappingParams) (TeamMapping, error) {
+	row := q.db.QueryRow(ctx, createEnhancedTeamMapping,
+		arg.InternalTeamID,
+		arg.FootballApiTeamID,
+		arg.Confidence,
+		arg.MappingMethod,
+		arg.TranslatedTeamName,
+		arg.TranslatedCountry,
+		arg.TranslatedLeague,
+		arg.OriginalTeamName,
+		arg.OriginalCountry,
+		arg.OriginalLeague,
+		arg.MatchFactors,
+		arg.NeedsReview,
+		arg.AiTranslationUsed,
+		arg.NormalizationApplied,
+		arg.MatchScore,
+	)
+	var i TeamMapping
+	err := row.Scan(
+		&i.ID,
+		&i.InternalTeamID,
+		&i.FootballApiTeamID,
+		&i.Confidence,
+		&i.MappingMethod,
+		&i.TranslatedTeamName,
+		&i.TranslatedCountry,
+		&i.TranslatedLeague,
+		&i.OriginalTeamName,
+		&i.OriginalCountry,
+		&i.OriginalLeague,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createLeagueMapping = `-- name: CreateLeagueMapping :one
 INSERT INTO league_mappings (
     internal_league_id, 
@@ -19,7 +201,7 @@ INSERT INTO league_mappings (
     mapping_method
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING id, internal_league_id, football_api_league_id, confidence, mapping_method, created_at, updated_at
+) RETURNING id, internal_league_id, football_api_league_id, confidence, mapping_method, translated_league_name, translated_country, original_league_name, original_country, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
 `
 
 type CreateLeagueMappingParams struct {
@@ -43,6 +225,15 @@ func (q *Queries) CreateLeagueMapping(ctx context.Context, arg CreateLeagueMappi
 		&i.FootballApiLeagueID,
 		&i.Confidence,
 		&i.MappingMethod,
+		&i.TranslatedLeagueName,
+		&i.TranslatedCountry,
+		&i.OriginalLeagueName,
+		&i.OriginalCountry,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -57,7 +248,7 @@ INSERT INTO team_mappings (
     mapping_method
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING id, internal_team_id, football_api_team_id, confidence, mapping_method, created_at, updated_at
+) RETURNING id, internal_team_id, football_api_team_id, confidence, mapping_method, translated_team_name, translated_country, translated_league, original_team_name, original_country, original_league, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
 `
 
 type CreateTeamMappingParams struct {
@@ -81,6 +272,17 @@ func (q *Queries) CreateTeamMapping(ctx context.Context, arg CreateTeamMappingPa
 		&i.FootballApiTeamID,
 		&i.Confidence,
 		&i.MappingMethod,
+		&i.TranslatedTeamName,
+		&i.TranslatedCountry,
+		&i.TranslatedLeague,
+		&i.OriginalTeamName,
+		&i.OriginalCountry,
+		&i.OriginalLeague,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -96,8 +298,104 @@ func (q *Queries) DeleteLeague(ctx context.Context, id int32) error {
 	return err
 }
 
+const enrichLeagueWithAPIFootball = `-- name: EnrichLeagueWithAPIFootball :one
+UPDATE leagues SET
+    api_football_id = $1,
+    league_type = $2,
+    logo_url = $3,
+    country_code = $4,
+    country_flag_url = $5,
+    has_standings = $6,
+    has_fixtures = $7,
+    has_players = $8,
+    has_top_scorers = $9,
+    has_injuries = $10,
+    has_predictions = $11,
+    has_odds = $12,
+    current_season_year = $13,
+    current_season_start = $14,
+    current_season_end = $15,
+    api_enrichment_data = $16,
+    last_api_update = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $17
+RETURNING id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at
+`
+
+type EnrichLeagueWithAPIFootballParams struct {
+	ApiFootballID      pgtype.Int4 `db:"api_football_id" json:"api_football_id"`
+	LeagueType         pgtype.Text `db:"league_type" json:"league_type"`
+	LogoUrl            pgtype.Text `db:"logo_url" json:"logo_url"`
+	CountryCode        pgtype.Text `db:"country_code" json:"country_code"`
+	CountryFlagUrl     pgtype.Text `db:"country_flag_url" json:"country_flag_url"`
+	HasStandings       pgtype.Bool `db:"has_standings" json:"has_standings"`
+	HasFixtures        pgtype.Bool `db:"has_fixtures" json:"has_fixtures"`
+	HasPlayers         pgtype.Bool `db:"has_players" json:"has_players"`
+	HasTopScorers      pgtype.Bool `db:"has_top_scorers" json:"has_top_scorers"`
+	HasInjuries        pgtype.Bool `db:"has_injuries" json:"has_injuries"`
+	HasPredictions     pgtype.Bool `db:"has_predictions" json:"has_predictions"`
+	HasOdds            pgtype.Bool `db:"has_odds" json:"has_odds"`
+	CurrentSeasonYear  pgtype.Int4 `db:"current_season_year" json:"current_season_year"`
+	CurrentSeasonStart pgtype.Date `db:"current_season_start" json:"current_season_start"`
+	CurrentSeasonEnd   pgtype.Date `db:"current_season_end" json:"current_season_end"`
+	ApiEnrichmentData  []byte      `db:"api_enrichment_data" json:"api_enrichment_data"`
+	ID                 int32       `db:"id" json:"id"`
+}
+
+func (q *Queries) EnrichLeagueWithAPIFootball(ctx context.Context, arg EnrichLeagueWithAPIFootballParams) (League, error) {
+	row := q.db.QueryRow(ctx, enrichLeagueWithAPIFootball,
+		arg.ApiFootballID,
+		arg.LeagueType,
+		arg.LogoUrl,
+		arg.CountryCode,
+		arg.CountryFlagUrl,
+		arg.HasStandings,
+		arg.HasFixtures,
+		arg.HasPlayers,
+		arg.HasTopScorers,
+		arg.HasInjuries,
+		arg.HasPredictions,
+		arg.HasOdds,
+		arg.CurrentSeasonYear,
+		arg.CurrentSeasonStart,
+		arg.CurrentSeasonEnd,
+		arg.ApiEnrichmentData,
+		arg.ID,
+	)
+	var i League
+	err := row.Scan(
+		&i.ID,
+		&i.ExternalID,
+		&i.Name,
+		&i.Country,
+		&i.SportID,
+		&i.IsActive,
+		&i.Slug,
+		&i.ApiFootballID,
+		&i.LeagueType,
+		&i.LogoUrl,
+		&i.CountryCode,
+		&i.CountryFlagUrl,
+		&i.HasStandings,
+		&i.HasFixtures,
+		&i.HasPlayers,
+		&i.HasTopScorers,
+		&i.HasInjuries,
+		&i.HasPredictions,
+		&i.HasOdds,
+		&i.CurrentSeasonYear,
+		&i.CurrentSeasonStart,
+		&i.CurrentSeasonEnd,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLeague = `-- name: GetLeague :one
-SELECT id, external_id, name, country, sport_id, is_active, slug, created_at, updated_at FROM leagues WHERE id = $1
+SELECT id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at FROM leagues WHERE id = $1
 `
 
 func (q *Queries) GetLeague(ctx context.Context, id int32) (League, error) {
@@ -111,6 +409,23 @@ func (q *Queries) GetLeague(ctx context.Context, id int32) (League, error) {
 		&i.SportID,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.LeagueType,
+		&i.LogoUrl,
+		&i.CountryCode,
+		&i.CountryFlagUrl,
+		&i.HasStandings,
+		&i.HasFixtures,
+		&i.HasPlayers,
+		&i.HasTopScorers,
+		&i.HasInjuries,
+		&i.HasPredictions,
+		&i.HasOdds,
+		&i.CurrentSeasonYear,
+		&i.CurrentSeasonStart,
+		&i.CurrentSeasonEnd,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -118,7 +433,7 @@ func (q *Queries) GetLeague(ctx context.Context, id int32) (League, error) {
 }
 
 const getLeagueByExternalID = `-- name: GetLeagueByExternalID :one
-SELECT id, external_id, name, country, sport_id, is_active, slug, created_at, updated_at FROM leagues WHERE external_id = $1
+SELECT id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at FROM leagues WHERE external_id = $1
 `
 
 func (q *Queries) GetLeagueByExternalID(ctx context.Context, externalID string) (League, error) {
@@ -132,6 +447,23 @@ func (q *Queries) GetLeagueByExternalID(ctx context.Context, externalID string) 
 		&i.SportID,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.LeagueType,
+		&i.LogoUrl,
+		&i.CountryCode,
+		&i.CountryFlagUrl,
+		&i.HasStandings,
+		&i.HasFixtures,
+		&i.HasPlayers,
+		&i.HasTopScorers,
+		&i.HasInjuries,
+		&i.HasPredictions,
+		&i.HasOdds,
+		&i.CurrentSeasonYear,
+		&i.CurrentSeasonStart,
+		&i.CurrentSeasonEnd,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -139,7 +471,7 @@ func (q *Queries) GetLeagueByExternalID(ctx context.Context, externalID string) 
 }
 
 const getLeagueMapping = `-- name: GetLeagueMapping :one
-SELECT id, internal_league_id, football_api_league_id, confidence, mapping_method, created_at, updated_at FROM league_mappings 
+SELECT id, internal_league_id, football_api_league_id, confidence, mapping_method, translated_league_name, translated_country, original_league_name, original_country, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at FROM league_mappings 
 WHERE internal_league_id = $1
 `
 
@@ -152,14 +484,74 @@ func (q *Queries) GetLeagueMapping(ctx context.Context, internalLeagueID int32) 
 		&i.FootballApiLeagueID,
 		&i.Confidence,
 		&i.MappingMethod,
+		&i.TranslatedLeagueName,
+		&i.TranslatedCountry,
+		&i.OriginalLeagueName,
+		&i.OriginalCountry,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getLeaguesByAPIFootballID = `-- name: GetLeaguesByAPIFootballID :many
+SELECT id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at FROM leagues WHERE api_football_id = $1
+`
+
+func (q *Queries) GetLeaguesByAPIFootballID(ctx context.Context, apiFootballID pgtype.Int4) ([]League, error) {
+	rows, err := q.db.Query(ctx, getLeaguesByAPIFootballID, apiFootballID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []League{}
+	for rows.Next() {
+		var i League
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.SportID,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.LeagueType,
+			&i.LogoUrl,
+			&i.CountryCode,
+			&i.CountryFlagUrl,
+			&i.HasStandings,
+			&i.HasFixtures,
+			&i.HasPlayers,
+			&i.HasTopScorers,
+			&i.HasInjuries,
+			&i.HasPredictions,
+			&i.HasOdds,
+			&i.CurrentSeasonYear,
+			&i.CurrentSeasonStart,
+			&i.CurrentSeasonEnd,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTeamMapping = `-- name: GetTeamMapping :one
-SELECT id, internal_team_id, football_api_team_id, confidence, mapping_method, created_at, updated_at FROM team_mappings 
+SELECT id, internal_team_id, football_api_team_id, confidence, mapping_method, translated_team_name, translated_country, translated_league, original_team_name, original_country, original_league, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at FROM team_mappings 
 WHERE internal_team_id = $1
 `
 
@@ -172,6 +564,17 @@ func (q *Queries) GetTeamMapping(ctx context.Context, internalTeamID int32) (Tea
 		&i.FootballApiTeamID,
 		&i.Confidence,
 		&i.MappingMethod,
+		&i.TranslatedTeamName,
+		&i.TranslatedCountry,
+		&i.TranslatedLeague,
+		&i.OriginalTeamName,
+		&i.OriginalCountry,
+		&i.OriginalLeague,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -179,7 +582,7 @@ func (q *Queries) GetTeamMapping(ctx context.Context, internalTeamID int32) (Tea
 }
 
 const listLeagueMappings = `-- name: ListLeagueMappings :many
-SELECT id, internal_league_id, football_api_league_id, confidence, mapping_method, created_at, updated_at FROM league_mappings ORDER BY confidence DESC
+SELECT id, internal_league_id, football_api_league_id, confidence, mapping_method, translated_league_name, translated_country, original_league_name, original_country, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at FROM league_mappings ORDER BY confidence DESC
 `
 
 func (q *Queries) ListLeagueMappings(ctx context.Context) ([]LeagueMapping, error) {
@@ -197,6 +600,15 @@ func (q *Queries) ListLeagueMappings(ctx context.Context) ([]LeagueMapping, erro
 			&i.FootballApiLeagueID,
 			&i.Confidence,
 			&i.MappingMethod,
+			&i.TranslatedLeagueName,
+			&i.TranslatedCountry,
+			&i.OriginalLeagueName,
+			&i.OriginalCountry,
+			&i.MatchFactors,
+			&i.NeedsReview,
+			&i.AiTranslationUsed,
+			&i.NormalizationApplied,
+			&i.MatchScore,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -211,7 +623,7 @@ func (q *Queries) ListLeagueMappings(ctx context.Context) ([]LeagueMapping, erro
 }
 
 const listLeagues = `-- name: ListLeagues :many
-SELECT id, external_id, name, country, sport_id, is_active, slug, created_at, updated_at FROM leagues ORDER BY name
+SELECT id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at FROM leagues ORDER BY name
 `
 
 func (q *Queries) ListLeagues(ctx context.Context) ([]League, error) {
@@ -231,6 +643,79 @@ func (q *Queries) ListLeagues(ctx context.Context) ([]League, error) {
 			&i.SportID,
 			&i.IsActive,
 			&i.Slug,
+			&i.ApiFootballID,
+			&i.LeagueType,
+			&i.LogoUrl,
+			&i.CountryCode,
+			&i.CountryFlagUrl,
+			&i.HasStandings,
+			&i.HasFixtures,
+			&i.HasPlayers,
+			&i.HasTopScorers,
+			&i.HasInjuries,
+			&i.HasPredictions,
+			&i.HasOdds,
+			&i.CurrentSeasonYear,
+			&i.CurrentSeasonStart,
+			&i.CurrentSeasonEnd,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLeaguesForAPIEnrichment = `-- name: ListLeaguesForAPIEnrichment :many
+SELECT l.id, l.external_id, l.name, l.country, l.sport_id, l.is_active, l.slug, l.api_football_id, l.league_type, l.logo_url, l.country_code, l.country_flag_url, l.has_standings, l.has_fixtures, l.has_players, l.has_top_scorers, l.has_injuries, l.has_predictions, l.has_odds, l.current_season_year, l.current_season_start, l.current_season_end, l.api_enrichment_data, l.last_api_update, l.created_at, l.updated_at FROM leagues l
+INNER JOIN league_mappings lm ON l.id = lm.internal_league_id
+WHERE l.last_api_update IS NULL 
+   OR l.last_api_update < NOW() - INTERVAL '7 days'
+ORDER BY l.updated_at ASC
+LIMIT $1
+`
+
+func (q *Queries) ListLeaguesForAPIEnrichment(ctx context.Context, limitCount int32) ([]League, error) {
+	rows, err := q.db.Query(ctx, listLeaguesForAPIEnrichment, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []League{}
+	for rows.Next() {
+		var i League
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.SportID,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.LeagueType,
+			&i.LogoUrl,
+			&i.CountryCode,
+			&i.CountryFlagUrl,
+			&i.HasStandings,
+			&i.HasFixtures,
+			&i.HasPlayers,
+			&i.HasTopScorers,
+			&i.HasInjuries,
+			&i.HasPredictions,
+			&i.HasOdds,
+			&i.CurrentSeasonYear,
+			&i.CurrentSeasonStart,
+			&i.CurrentSeasonEnd,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -245,7 +730,7 @@ func (q *Queries) ListLeagues(ctx context.Context) ([]League, error) {
 }
 
 const listTeamMappings = `-- name: ListTeamMappings :many
-SELECT id, internal_team_id, football_api_team_id, confidence, mapping_method, created_at, updated_at FROM team_mappings ORDER BY confidence DESC
+SELECT id, internal_team_id, football_api_team_id, confidence, mapping_method, translated_team_name, translated_country, translated_league, original_team_name, original_country, original_league, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at FROM team_mappings ORDER BY confidence DESC
 `
 
 func (q *Queries) ListTeamMappings(ctx context.Context) ([]TeamMapping, error) {
@@ -263,6 +748,17 @@ func (q *Queries) ListTeamMappings(ctx context.Context) ([]TeamMapping, error) {
 			&i.FootballApiTeamID,
 			&i.Confidence,
 			&i.MappingMethod,
+			&i.TranslatedTeamName,
+			&i.TranslatedCountry,
+			&i.TranslatedLeague,
+			&i.OriginalTeamName,
+			&i.OriginalCountry,
+			&i.OriginalLeague,
+			&i.MatchFactors,
+			&i.NeedsReview,
+			&i.AiTranslationUsed,
+			&i.NormalizationApplied,
+			&i.MatchScore,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -277,7 +773,7 @@ func (q *Queries) ListTeamMappings(ctx context.Context) ([]TeamMapping, error) {
 }
 
 const listTeamsByLeague = `-- name: ListTeamsByLeague :many
-SELECT t.id, t.external_id, t.name, t.country, t.logo_url, t.is_active, t.slug, t.created_at, t.updated_at FROM teams t
+SELECT t.id, t.external_id, t.name, t.country, t.logo_url, t.is_active, t.slug, t.api_football_id, t.team_code, t.founded_year, t.is_national_team, t.venue_id, t.venue_name, t.venue_address, t.venue_city, t.venue_capacity, t.venue_surface, t.venue_image_url, t.api_enrichment_data, t.last_api_update, t.created_at, t.updated_at FROM teams t
 INNER JOIN events e ON (t.id = e.home_team_id OR t.id = e.away_team_id)
 WHERE e.league_id = $1
 GROUP BY t.id, t.external_id, t.name, t.country, t.logo_url, t.is_active, t.slug, t.created_at, t.updated_at
@@ -300,6 +796,19 @@ func (q *Queries) ListTeamsByLeague(ctx context.Context, leagueID pgtype.Int4) (
 			&i.LogoUrl,
 			&i.IsActive,
 			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -314,7 +823,7 @@ func (q *Queries) ListTeamsByLeague(ctx context.Context, leagueID pgtype.Int4) (
 }
 
 const listUnmappedFootballLeagues = `-- name: ListUnmappedFootballLeagues :many
-SELECT l.id, l.external_id, l.name, l.country, l.sport_id, l.is_active, l.slug, l.created_at, l.updated_at FROM leagues l 
+SELECT l.id, l.external_id, l.name, l.country, l.sport_id, l.is_active, l.slug, l.api_football_id, l.league_type, l.logo_url, l.country_code, l.country_flag_url, l.has_standings, l.has_fixtures, l.has_players, l.has_top_scorers, l.has_injuries, l.has_predictions, l.has_odds, l.current_season_year, l.current_season_start, l.current_season_end, l.api_enrichment_data, l.last_api_update, l.created_at, l.updated_at FROM leagues l 
 LEFT JOIN league_mappings lm ON l.id = lm.internal_league_id 
 WHERE lm.id IS NULL AND l.sport_id = 1
 `
@@ -336,6 +845,23 @@ func (q *Queries) ListUnmappedFootballLeagues(ctx context.Context) ([]League, er
 			&i.SportID,
 			&i.IsActive,
 			&i.Slug,
+			&i.ApiFootballID,
+			&i.LeagueType,
+			&i.LogoUrl,
+			&i.CountryCode,
+			&i.CountryFlagUrl,
+			&i.HasStandings,
+			&i.HasFixtures,
+			&i.HasPlayers,
+			&i.HasTopScorers,
+			&i.HasInjuries,
+			&i.HasPredictions,
+			&i.HasOdds,
+			&i.CurrentSeasonYear,
+			&i.CurrentSeasonStart,
+			&i.CurrentSeasonEnd,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -350,7 +876,7 @@ func (q *Queries) ListUnmappedFootballLeagues(ctx context.Context) ([]League, er
 }
 
 const listUnmappedLeagues = `-- name: ListUnmappedLeagues :many
-SELECT l.id, l.external_id, l.name, l.country, l.sport_id, l.is_active, l.slug, l.created_at, l.updated_at FROM leagues l 
+SELECT l.id, l.external_id, l.name, l.country, l.sport_id, l.is_active, l.slug, l.api_football_id, l.league_type, l.logo_url, l.country_code, l.country_flag_url, l.has_standings, l.has_fixtures, l.has_players, l.has_top_scorers, l.has_injuries, l.has_predictions, l.has_odds, l.current_season_year, l.current_season_start, l.current_season_end, l.api_enrichment_data, l.last_api_update, l.created_at, l.updated_at FROM leagues l 
 LEFT JOIN league_mappings lm ON l.id = lm.internal_league_id 
 WHERE lm.id IS NULL
 `
@@ -372,6 +898,23 @@ func (q *Queries) ListUnmappedLeagues(ctx context.Context) ([]League, error) {
 			&i.SportID,
 			&i.IsActive,
 			&i.Slug,
+			&i.ApiFootballID,
+			&i.LeagueType,
+			&i.LogoUrl,
+			&i.CountryCode,
+			&i.CountryFlagUrl,
+			&i.HasStandings,
+			&i.HasFixtures,
+			&i.HasPlayers,
+			&i.HasTopScorers,
+			&i.HasInjuries,
+			&i.HasPredictions,
+			&i.HasOdds,
+			&i.CurrentSeasonYear,
+			&i.CurrentSeasonStart,
+			&i.CurrentSeasonEnd,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -389,7 +932,7 @@ const updateLeague = `-- name: UpdateLeague :one
 UPDATE leagues 
 SET name = $1, country = $2, sport_id = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP
 WHERE id = $5
-RETURNING id, external_id, name, country, sport_id, is_active, slug, created_at, updated_at
+RETURNING id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type UpdateLeagueParams struct {
@@ -417,6 +960,23 @@ func (q *Queries) UpdateLeague(ctx context.Context, arg UpdateLeagueParams) (Lea
 		&i.SportID,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.LeagueType,
+		&i.LogoUrl,
+		&i.CountryCode,
+		&i.CountryFlagUrl,
+		&i.HasStandings,
+		&i.HasFixtures,
+		&i.HasPlayers,
+		&i.HasTopScorers,
+		&i.HasInjuries,
+		&i.HasPredictions,
+		&i.HasOdds,
+		&i.CurrentSeasonYear,
+		&i.CurrentSeasonStart,
+		&i.CurrentSeasonEnd,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -432,7 +992,7 @@ ON CONFLICT (external_id) DO UPDATE SET
     sport_id = EXCLUDED.sport_id,
     is_active = EXCLUDED.is_active,
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, external_id, name, country, sport_id, is_active, slug, created_at, updated_at
+RETURNING id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type UpsertLeagueParams struct {
@@ -460,6 +1020,23 @@ func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (Lea
 		&i.SportID,
 		&i.IsActive,
 		&i.Slug,
+		&i.ApiFootballID,
+		&i.LeagueType,
+		&i.LogoUrl,
+		&i.CountryCode,
+		&i.CountryFlagUrl,
+		&i.HasStandings,
+		&i.HasFixtures,
+		&i.HasPlayers,
+		&i.HasTopScorers,
+		&i.HasInjuries,
+		&i.HasPredictions,
+		&i.HasOdds,
+		&i.CurrentSeasonYear,
+		&i.CurrentSeasonStart,
+		&i.CurrentSeasonEnd,
+		&i.ApiEnrichmentData,
+		&i.LastApiUpdate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

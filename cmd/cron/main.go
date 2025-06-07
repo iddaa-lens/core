@@ -21,7 +21,7 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds)")
+		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment)")
 		once    = flag.Bool("once", false, "Run job once and exit")
 	)
 	flag.Parse()
@@ -114,6 +114,30 @@ func main() {
 		log.Fatalf("Failed to register detailed odds sync job: %v", err)
 	}
 
+	// Register API-Football league matching job (independent of Iddaa sync)
+	apiFootballLeagueMatchingJob := jobs.NewAPIFootballLeagueMatchingJob(queries)
+	if err := jobManager.RegisterJob(apiFootballLeagueMatchingJob); err != nil {
+		log.Fatalf("Failed to register API-Football league matching job: %v", err)
+	}
+
+	// Register API-Football team matching job (independent of Iddaa sync)
+	apiFootballTeamMatchingJob := jobs.NewAPIFootballTeamMatchingJob(queries)
+	if err := jobManager.RegisterJob(apiFootballTeamMatchingJob); err != nil {
+		log.Fatalf("Failed to register API-Football team matching job: %v", err)
+	}
+
+	// Register API-Football league enrichment job
+	apiFootballLeagueEnrichmentJob := jobs.NewAPIFootballLeagueEnrichmentJob(queries)
+	if err := jobManager.RegisterJob(apiFootballLeagueEnrichmentJob); err != nil {
+		log.Fatalf("Failed to register API-Football league enrichment job: %v", err)
+	}
+
+	// Register API-Football team enrichment job
+	apiFootballTeamEnrichmentJob := jobs.NewAPIFootballTeamEnrichmentJob(queries)
+	if err := jobManager.RegisterJob(apiFootballTeamEnrichmentJob); err != nil {
+		log.Fatalf("Failed to register API-Football team enrichment job: %v", err)
+	}
+
 	// Handle single job execution
 	if *once && *jobName != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -180,8 +204,32 @@ func main() {
 				log.Fatalf("Failed to execute detailed odds job: %v", err)
 			}
 			log.Println("Detailed odds sync completed successfully")
+		case "api_football_league_matching":
+			log.Println("Running API-Football league matching job once...")
+			if err := apiFootballLeagueMatchingJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute API-Football league matching job: %v", err)
+			}
+			log.Println("API-Football league matching completed successfully")
+		case "api_football_team_matching":
+			log.Println("Running API-Football team matching job once...")
+			if err := apiFootballTeamMatchingJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute API-Football team matching job: %v", err)
+			}
+			log.Println("API-Football team matching completed successfully")
+		case "api_football_league_enrichment":
+			log.Println("Running API-Football league enrichment job once...")
+			if err := apiFootballLeagueEnrichmentJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute API-Football league enrichment job: %v", err)
+			}
+			log.Println("API-Football league enrichment completed successfully")
+		case "api_football_team_enrichment":
+			log.Println("Running API-Football team enrichment job once...")
+			if err := apiFootballTeamEnrichmentJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute API-Football team enrichment job: %v", err)
+			}
+			log.Println("API-Football team enrichment completed successfully")
 		default:
-			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds", *jobName)
+			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment", *jobName)
 		}
 		return
 	}

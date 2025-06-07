@@ -124,20 +124,35 @@ func TestIddaaClient_GetCompetitions(t *testing.T) {
 
 func TestIddaaClient_GetEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sportsbook/competitions/123/events" {
-			t.Errorf("Expected path /sportsbook/competitions/123/events, got %s", r.URL.Path)
+		// Updated to expect the new events endpoint with sport ID and type parameters
+		if r.URL.RawQuery != "st=1&type=0&version=0" {
+			t.Errorf("Expected query st=1&type=0&version=0, got %s", r.URL.RawQuery)
 		}
 
-		response := models.IddaaAPIResponse[models.IddaaEvent]{
+		response := models.IddaaEventsResponse{
 			IsSuccess: true,
-			Data: []models.IddaaEvent{
-				{
-					ID:            456,
-					CompetitionID: 123,
-					Date:          1704141600000, // Unix timestamp
-					HomeTeam:      "Team A",
-					AwayTeam:      "Team B",
-					Status:        1, // Status is int
+			Data: &models.IddaaEventsData{
+				IsDiff:  false,
+				Version: 1,
+				Events: []models.IddaaEvent{
+					{
+						ID:            456,
+						CompetitionID: 123,
+						Date:          1704141600, // Unix timestamp in seconds
+						HomeTeam:      "Team A",
+						AwayTeam:      "Team B",
+						Status:        1,
+						SportID:       1,
+						BulletinID:    789,
+						Version:       1,
+						BetProgram:    1,
+						IsLive:        false,
+						MBC:           1,
+						HasKingOdd:    false,
+						OddsCount:     5,
+						HasCombine:    true,
+						Markets:       []models.IddaaMarket{},
+					},
 				},
 			},
 			Message: "",
@@ -156,7 +171,7 @@ func TestIddaaClient_GetEvents(t *testing.T) {
 	client := NewIddaaClient(cfg)
 	client.baseURL = server.URL
 
-	result, err := client.GetEvents(123)
+	result, err := client.GetEvents(1) // Pass sport ID instead of competition ID
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -167,11 +182,16 @@ func TestIddaaClient_GetEvents(t *testing.T) {
 		t.Errorf("Expected successful response")
 	}
 
-	if len(result.Data) != 1 {
-		t.Errorf("Expected 1 event, got %d", len(result.Data))
+	if result.Data == nil {
+		t.Errorf("Expected data to be non-nil")
+		return
 	}
 
-	event := result.Data[0]
+	if len(result.Data.Events) != 1 {
+		t.Errorf("Expected 1 event, got %d", len(result.Data.Events))
+	}
+
+	event := result.Data.Events[0]
 	if event.ID != 456 {
 		t.Errorf("Expected event ID 456, got %d", event.ID)
 	}

@@ -147,14 +147,31 @@ const getRecentMovements = `-- name: GetRecentMovements :many
 SELECT 
     oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at,
     e.slug as event_slug,
+    e.event_date,
+    e.status as event_status,
+    e.is_live,
+    e.home_score,
+    e.away_score,
+    e.minute_of_match,
+    e.betting_volume_percentage,
     mt.code as market_code,
+    mt.name as market_name,
+    mt.description as market_description,
     ht.name as home_team,
-    at.name as away_team
+    ht.country as home_team_country,
+    at.name as away_team,
+    at.country as away_team_country,
+    l.name as league_name,
+    l.country as league_country,
+    s.name as sport_name,
+    s.code as sport_code
 FROM odds_history oh
 JOIN events e ON oh.event_id = e.id
 JOIN teams ht ON e.home_team_id = ht.id
 JOIN teams at ON e.away_team_id = at.id
 JOIN market_types mt ON oh.market_type_id = mt.id
+JOIN leagues l ON e.league_id = l.id
+JOIN sports s ON e.sport_id = s.id
 WHERE oh.recorded_at > $1
 AND ABS(oh.change_percentage) > $2
 ORDER BY oh.recorded_at DESC
@@ -168,21 +185,36 @@ type GetRecentMovementsParams struct {
 }
 
 type GetRecentMovementsRow struct {
-	ID               int32            `db:"id" json:"id"`
-	EventID          pgtype.Int4      `db:"event_id" json:"event_id"`
-	MarketTypeID     pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
-	Outcome          string           `db:"outcome" json:"outcome"`
-	OddsValue        pgtype.Numeric   `db:"odds_value" json:"odds_value"`
-	PreviousValue    pgtype.Numeric   `db:"previous_value" json:"previous_value"`
-	WinningOdds      pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount     pgtype.Numeric   `db:"change_amount" json:"change_amount"`
-	ChangePercentage pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
-	Multiplier       pgtype.Numeric   `db:"multiplier" json:"multiplier"`
-	RecordedAt       pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
-	EventSlug        string           `db:"event_slug" json:"event_slug"`
-	MarketCode       string           `db:"market_code" json:"market_code"`
-	HomeTeam         string           `db:"home_team" json:"home_team"`
-	AwayTeam         string           `db:"away_team" json:"away_team"`
+	ID                      int32            `db:"id" json:"id"`
+	EventID                 pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID            pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome                 string           `db:"outcome" json:"outcome"`
+	OddsValue               pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue           pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds             pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount            pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage        pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier              pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt              pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	EventSlug               string           `db:"event_slug" json:"event_slug"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	EventStatus             string           `db:"event_status" json:"event_status"`
+	IsLive                  pgtype.Bool      `db:"is_live" json:"is_live"`
+	HomeScore               pgtype.Int4      `db:"home_score" json:"home_score"`
+	AwayScore               pgtype.Int4      `db:"away_score" json:"away_score"`
+	MinuteOfMatch           pgtype.Int4      `db:"minute_of_match" json:"minute_of_match"`
+	BettingVolumePercentage pgtype.Numeric   `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	MarketCode              string           `db:"market_code" json:"market_code"`
+	MarketName              string           `db:"market_name" json:"market_name"`
+	MarketDescription       pgtype.Text      `db:"market_description" json:"market_description"`
+	HomeTeam                string           `db:"home_team" json:"home_team"`
+	HomeTeamCountry         pgtype.Text      `db:"home_team_country" json:"home_team_country"`
+	AwayTeam                string           `db:"away_team" json:"away_team"`
+	AwayTeamCountry         pgtype.Text      `db:"away_team_country" json:"away_team_country"`
+	LeagueName              string           `db:"league_name" json:"league_name"`
+	LeagueCountry           pgtype.Text      `db:"league_country" json:"league_country"`
+	SportName               string           `db:"sport_name" json:"sport_name"`
+	SportCode               string           `db:"sport_code" json:"sport_code"`
 }
 
 // Get recent significant odds movements across all events
@@ -208,9 +240,24 @@ func (q *Queries) GetRecentMovements(ctx context.Context, arg GetRecentMovements
 			&i.Multiplier,
 			&i.RecordedAt,
 			&i.EventSlug,
+			&i.EventDate,
+			&i.EventStatus,
+			&i.IsLive,
+			&i.HomeScore,
+			&i.AwayScore,
+			&i.MinuteOfMatch,
+			&i.BettingVolumePercentage,
 			&i.MarketCode,
+			&i.MarketName,
+			&i.MarketDescription,
 			&i.HomeTeam,
+			&i.HomeTeamCountry,
 			&i.AwayTeam,
+			&i.AwayTeamCountry,
+			&i.LeagueName,
+			&i.LeagueCountry,
+			&i.SportName,
+			&i.SportCode,
 		); err != nil {
 			return nil, err
 		}
