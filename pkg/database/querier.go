@@ -21,15 +21,19 @@ type Querier interface {
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateLeagueMapping(ctx context.Context, arg CreateLeagueMappingParams) (LeagueMapping, error)
 	CreateMatchEvent(ctx context.Context, arg CreateMatchEventParams) (MatchEvent, error)
+	CreateMovementAlert(ctx context.Context, arg CreateMovementAlertParams) (MovementAlert, error)
 	CreateOddsHistory(ctx context.Context, arg CreateOddsHistoryParams) (OddsHistory, error)
 	CreatePrediction(ctx context.Context, arg CreatePredictionParams) (Prediction, error)
 	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateTeamMapping(ctx context.Context, arg CreateTeamMappingParams) (TeamMapping, error)
 	CreateVolumeHistory(ctx context.Context, arg CreateVolumeHistoryParams) (BettingVolumeHistory, error)
+	DeactivateExpiredAlerts(ctx context.Context) error
 	DeleteLeague(ctx context.Context, id int32) error
 	EnrichLeagueWithAPIFootball(ctx context.Context, arg EnrichLeagueWithAPIFootballParams) (League, error)
 	EnrichTeamWithAPIFootball(ctx context.Context, arg EnrichTeamWithAPIFootballParams) (Team, error)
+	GetActiveAlerts(ctx context.Context, arg GetActiveAlertsParams) ([]GetActiveAlertsRow, error)
 	GetActiveEventsForDetailedSync(ctx context.Context, limitCount int32) ([]Event, error)
+	GetAlertsByUser(ctx context.Context, arg GetAlertsByUserParams) ([]GetAlertsByUserRow, error)
 	GetBigMovers(ctx context.Context, arg GetBigMoversParams) ([]GetBigMoversRow, error)
 	GetContrarianBets(ctx context.Context) ([]ContrarianBet, error)
 	GetCurrentOdds(ctx context.Context, eventID pgtype.Int4) ([]GetCurrentOddsRow, error)
@@ -41,13 +45,16 @@ type Querier interface {
 	GetEventBettingPatterns(ctx context.Context, eventID pgtype.Int4) ([]GetEventBettingPatternsRow, error)
 	GetEventByExternalID(ctx context.Context, externalID string) (GetEventByExternalIDRow, error)
 	GetEventByExternalIDSimple(ctx context.Context, externalID string) (Event, error)
+	GetEventByID(ctx context.Context, id int32) (Event, error)
 	GetEventDistributions(ctx context.Context, eventID pgtype.Int4) ([]OutcomeDistribution, error)
 	GetEventStatisticsSummary(ctx context.Context, eventID int32) (GetEventStatisticsSummaryRow, error)
+	GetEventsByTeam(ctx context.Context, arg GetEventsByTeamParams) ([]GetEventsByTeamRow, error)
 	// Find low-volume events with big movements (potential sharp money)
 	GetHiddenGems(ctx context.Context, arg GetHiddenGemsParams) ([]GetHiddenGemsRow, error)
 	// Find events with high betting volume AND significant odds movement
 	GetHotMovers(ctx context.Context, arg GetHotMoversParams) ([]GetHotMoversRow, error)
 	GetLatestConfig(ctx context.Context, platform string) (AppConfig, error)
+	GetLatestOutcomeDistribution(ctx context.Context, arg GetLatestOutcomeDistributionParams) (OutcomeDistribution, error)
 	GetLatestPredictions(ctx context.Context, eventID pgtype.Int4) ([]GetLatestPredictionsRow, error)
 	GetLeague(ctx context.Context, id int32) (League, error)
 	GetLeagueByExternalID(ctx context.Context, externalID string) (League, error)
@@ -63,12 +70,17 @@ type Querier interface {
 	GetOddsChangesByMarket(ctx context.Context, arg GetOddsChangesByMarketParams) ([]GetOddsChangesByMarketRow, error)
 	// Get full odds history for a specific event
 	GetOddsHistory(ctx context.Context, eventID pgtype.Int4) ([]GetOddsHistoryRow, error)
+	GetOddsHistoryByID(ctx context.Context, id int32) (OddsHistory, error)
 	GetOddsMovements(ctx context.Context, arg GetOddsMovementsParams) ([]GetOddsMovementsRow, error)
 	GetOutcomeDistribution(ctx context.Context, arg GetOutcomeDistributionParams) (OutcomeDistribution, error)
 	GetPredictionAccuracy(ctx context.Context, sinceDate pgtype.Timestamp) ([]GetPredictionAccuracyRow, error)
 	GetPredictionsByEvent(ctx context.Context, eventID pgtype.Int4) ([]GetPredictionsByEventRow, error)
+	// Smart Money Tracker queries
+	GetRecentBigMovers(ctx context.Context, arg GetRecentBigMoversParams) ([]GetRecentBigMoversRow, error)
 	// Get recent significant odds movements across all events
 	GetRecentMovements(ctx context.Context, arg GetRecentMovementsParams) ([]GetRecentMovementsRow, error)
+	GetRecentOddsHistory(ctx context.Context, arg GetRecentOddsHistoryParams) ([]GetRecentOddsHistoryRow, error)
+	GetReverseLineMovements(ctx context.Context, arg GetReverseLineMovementsParams) ([]GetReverseLineMovementsRow, error)
 	GetSport(ctx context.Context, id int32) (Sport, error)
 	// Get potentially suspicious odds movements (sharp money indicators)
 	GetSuspiciousMovements(ctx context.Context, arg GetSuspiciousMovementsParams) ([]GetSuspiciousMovementsRow, error)
@@ -82,6 +94,8 @@ type Querier interface {
 	GetTopDistributions(ctx context.Context, limitCount int32) ([]OutcomeDistribution, error)
 	// Get current top events by betting volume
 	GetTopVolumeEvents(ctx context.Context) ([]GetTopVolumeEventsRow, error)
+	GetUserSmartMoneyPreferences(ctx context.Context, userID string) (SmartMoneyPreference, error)
+	GetValueSpots(ctx context.Context, arg GetValueSpotsParams) ([]GetValueSpotsRow, error)
 	// Get volume history for a specific event
 	GetVolumeHistory(ctx context.Context, eventID pgtype.Int4) ([]GetVolumeHistoryRow, error)
 	ListEventsByDate(ctx context.Context, eventDate interface{}) ([]ListEventsByDateRow, error)
@@ -96,6 +110,8 @@ type Querier interface {
 	ListUnmappedFootballLeagues(ctx context.Context) ([]League, error)
 	ListUnmappedLeagues(ctx context.Context) ([]League, error)
 	ListUnmappedTeams(ctx context.Context) ([]Team, error)
+	MarkAlertClicked(ctx context.Context, alertID int32) error
+	MarkAlertViewed(ctx context.Context, alertID int32) error
 	RefreshContrarianBets(ctx context.Context) error
 	SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Team, error)
 	SearchTeamsByCode(ctx context.Context, arg SearchTeamsByCodeParams) ([]Team, error)
@@ -119,6 +135,7 @@ type Querier interface {
 	UpsertSport(ctx context.Context, arg UpsertSportParams) (Sport, error)
 	UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, error)
 	UpsertTeamMapping(ctx context.Context, arg UpsertTeamMappingParams) (TeamMapping, error)
+	UpsertUserSmartMoneyPreferences(ctx context.Context, arg UpsertUserSmartMoneyPreferencesParams) (SmartMoneyPreference, error)
 }
 
 var _ Querier = (*Queries)(nil)

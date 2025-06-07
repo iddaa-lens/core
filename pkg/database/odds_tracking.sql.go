@@ -13,7 +13,7 @@ import (
 
 const getOddsChangesByMarket = `-- name: GetOddsChangesByMarket :many
 SELECT 
-    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at,
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff,
     mt.code as market_code,
     mt.name as market_name
 FROM odds_history oh
@@ -31,19 +31,23 @@ type GetOddsChangesByMarketParams struct {
 }
 
 type GetOddsChangesByMarketRow struct {
-	ID               int32            `db:"id" json:"id"`
-	EventID          pgtype.Int4      `db:"event_id" json:"event_id"`
-	MarketTypeID     pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
-	Outcome          string           `db:"outcome" json:"outcome"`
-	OddsValue        pgtype.Numeric   `db:"odds_value" json:"odds_value"`
-	PreviousValue    pgtype.Numeric   `db:"previous_value" json:"previous_value"`
-	WinningOdds      pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount     pgtype.Numeric   `db:"change_amount" json:"change_amount"`
-	ChangePercentage pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
-	Multiplier       pgtype.Numeric   `db:"multiplier" json:"multiplier"`
-	RecordedAt       pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
-	MarketCode       string           `db:"market_code" json:"market_code"`
-	MarketName       string           `db:"market_name" json:"market_name"`
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
+	MarketName          string           `db:"market_name" json:"market_name"`
 }
 
 // Get odds changes for a specific market
@@ -68,6 +72,10 @@ func (q *Queries) GetOddsChangesByMarket(ctx context.Context, arg GetOddsChanges
 			&i.ChangePercentage,
 			&i.Multiplier,
 			&i.RecordedAt,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
 			&i.MarketCode,
 			&i.MarketName,
 		); err != nil {
@@ -83,7 +91,7 @@ func (q *Queries) GetOddsChangesByMarket(ctx context.Context, arg GetOddsChanges
 
 const getOddsHistory = `-- name: GetOddsHistory :many
 SELECT 
-    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at,
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff,
     mt.code as market_code,
     mt.name as market_name
 FROM odds_history oh
@@ -93,19 +101,23 @@ ORDER BY oh.market_type_id, oh.outcome, oh.recorded_at DESC
 `
 
 type GetOddsHistoryRow struct {
-	ID               int32            `db:"id" json:"id"`
-	EventID          pgtype.Int4      `db:"event_id" json:"event_id"`
-	MarketTypeID     pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
-	Outcome          string           `db:"outcome" json:"outcome"`
-	OddsValue        pgtype.Numeric   `db:"odds_value" json:"odds_value"`
-	PreviousValue    pgtype.Numeric   `db:"previous_value" json:"previous_value"`
-	WinningOdds      pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount     pgtype.Numeric   `db:"change_amount" json:"change_amount"`
-	ChangePercentage pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
-	Multiplier       pgtype.Numeric   `db:"multiplier" json:"multiplier"`
-	RecordedAt       pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
-	MarketCode       string           `db:"market_code" json:"market_code"`
-	MarketName       string           `db:"market_name" json:"market_name"`
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
+	MarketName          string           `db:"market_name" json:"market_name"`
 }
 
 // Get full odds history for a specific event
@@ -130,6 +142,10 @@ func (q *Queries) GetOddsHistory(ctx context.Context, eventID pgtype.Int4) ([]Ge
 			&i.ChangePercentage,
 			&i.Multiplier,
 			&i.RecordedAt,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
 			&i.MarketCode,
 			&i.MarketName,
 		); err != nil {
@@ -145,7 +161,7 @@ func (q *Queries) GetOddsHistory(ctx context.Context, eventID pgtype.Int4) ([]Ge
 
 const getRecentMovements = `-- name: GetRecentMovements :many
 SELECT 
-    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at,
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff,
     e.slug as event_slug,
     e.event_date,
     e.status as event_status,
@@ -196,6 +212,10 @@ type GetRecentMovementsRow struct {
 	ChangePercentage        pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
 	Multiplier              pgtype.Numeric   `db:"multiplier" json:"multiplier"`
 	RecordedAt              pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator     pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement       pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel       pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff        pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
 	EventSlug               string           `db:"event_slug" json:"event_slug"`
 	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
 	EventStatus             string           `db:"event_status" json:"event_status"`
@@ -239,6 +259,10 @@ func (q *Queries) GetRecentMovements(ctx context.Context, arg GetRecentMovements
 			&i.ChangePercentage,
 			&i.Multiplier,
 			&i.RecordedAt,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
 			&i.EventSlug,
 			&i.EventDate,
 			&i.EventStatus,
@@ -271,7 +295,7 @@ func (q *Queries) GetRecentMovements(ctx context.Context, arg GetRecentMovements
 
 const getSuspiciousMovements = `-- name: GetSuspiciousMovements :many
 SELECT 
-    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at,
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff,
     e.slug as event_slug,
     mt.code as market_code
 FROM odds_history oh
@@ -292,19 +316,23 @@ type GetSuspiciousMovementsParams struct {
 }
 
 type GetSuspiciousMovementsRow struct {
-	ID               int32            `db:"id" json:"id"`
-	EventID          pgtype.Int4      `db:"event_id" json:"event_id"`
-	MarketTypeID     pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
-	Outcome          string           `db:"outcome" json:"outcome"`
-	OddsValue        pgtype.Numeric   `db:"odds_value" json:"odds_value"`
-	PreviousValue    pgtype.Numeric   `db:"previous_value" json:"previous_value"`
-	WinningOdds      pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount     pgtype.Numeric   `db:"change_amount" json:"change_amount"`
-	ChangePercentage pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
-	Multiplier       pgtype.Numeric   `db:"multiplier" json:"multiplier"`
-	RecordedAt       pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
-	EventSlug        string           `db:"event_slug" json:"event_slug"`
-	MarketCode       string           `db:"market_code" json:"market_code"`
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	EventSlug           string           `db:"event_slug" json:"event_slug"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
 }
 
 // Get potentially suspicious odds movements (sharp money indicators)
@@ -329,6 +357,10 @@ func (q *Queries) GetSuspiciousMovements(ctx context.Context, arg GetSuspiciousM
 			&i.ChangePercentage,
 			&i.Multiplier,
 			&i.RecordedAt,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
 			&i.EventSlug,
 			&i.MarketCode,
 		); err != nil {

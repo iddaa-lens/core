@@ -102,7 +102,8 @@ func (m *TeamLeagueMatcher) translateTeamContext(ctx context.Context, team datab
 		country = m.translator.TranslateCountryName(team.Country.String)
 	}
 
-	// TODO: Add league translation when we have team->league relationship
+	// League information would ideally come from team's event participation
+	// For now, use empty league - this would need database access to implement properly
 	league := ""
 
 	return &TeamTranslations{

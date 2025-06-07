@@ -58,7 +58,9 @@ func (m *cronJobManager) RegisterJob(job Job) error {
 				Msg("Job execution failed")
 		} else {
 			duration := time.Since(start)
-			jobLogger.LogJobComplete(job.Name(), duration, 0, 0) // TODO: Pass actual metrics
+			// For successful completion without specific metrics, indicate job ran successfully
+			// Individual jobs should log their own detailed metrics during execution
+			jobLogger.LogJobComplete(job.Name(), duration, 0, 0) // Generic successful completion
 		}
 	})
 

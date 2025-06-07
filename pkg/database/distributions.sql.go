@@ -275,6 +275,38 @@ func (q *Queries) GetEventDistributions(ctx context.Context, eventID pgtype.Int4
 	return items, nil
 }
 
+const getLatestOutcomeDistribution = `-- name: GetLatestOutcomeDistribution :one
+SELECT id, event_id, market_id, market_type_id, outcome, bet_percentage, implied_probability, value_indicator, last_updated FROM outcome_distributions
+WHERE event_id = $1
+  AND market_id = $2
+  AND outcome = $3
+ORDER BY last_updated DESC
+LIMIT 1
+`
+
+type GetLatestOutcomeDistributionParams struct {
+	EventID  pgtype.Int4 `db:"event_id" json:"event_id"`
+	MarketID int32       `db:"market_id" json:"market_id"`
+	Outcome  string      `db:"outcome" json:"outcome"`
+}
+
+func (q *Queries) GetLatestOutcomeDistribution(ctx context.Context, arg GetLatestOutcomeDistributionParams) (OutcomeDistribution, error) {
+	row := q.db.QueryRow(ctx, getLatestOutcomeDistribution, arg.EventID, arg.MarketID, arg.Outcome)
+	var i OutcomeDistribution
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.MarketID,
+		&i.MarketTypeID,
+		&i.Outcome,
+		&i.BetPercentage,
+		&i.ImpliedProbability,
+		&i.ValueIndicator,
+		&i.LastUpdated,
+	)
+	return i, err
+}
+
 const getOutcomeDistribution = `-- name: GetOutcomeDistribution :one
 SELECT id, event_id, market_id, market_type_id, outcome, bet_percentage, implied_probability, value_indicator, last_updated FROM outcome_distributions
 WHERE event_id = $1

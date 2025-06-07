@@ -89,3 +89,11 @@ WHERE event_id = sqlc.arg(event_id)
   AND market_id = sqlc.arg(market_id)
   AND outcome = sqlc.arg(outcome)
 ORDER BY recorded_at DESC;
+
+-- name: GetLatestOutcomeDistribution :one
+SELECT * FROM outcome_distributions
+WHERE event_id = sqlc.arg(event_id)
+  AND market_id = sqlc.arg(market_id)
+  AND outcome = sqlc.arg(outcome)
+ORDER BY last_updated DESC
+LIMIT 1;

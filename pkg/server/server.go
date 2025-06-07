@@ -13,9 +13,11 @@ import (
 	"github.com/iddaa-lens/core/pkg/handlers/health"
 	"github.com/iddaa-lens/core/pkg/handlers/leagues"
 	"github.com/iddaa-lens/core/pkg/handlers/odds"
+	"github.com/iddaa-lens/core/pkg/handlers/smart_money"
 	"github.com/iddaa-lens/core/pkg/handlers/teams"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/middleware"
+	"github.com/iddaa-lens/core/pkg/services"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,11 +29,12 @@ type Server struct {
 	dbPool   *pgxpool.Pool
 	queries  *database.Queries
 	handlers struct {
-		health  *health.Handler
-		events  *events.Handler
-		odds    *odds.Handler
-		teams   *teams.Handler
-		leagues *leagues.Handler
+		health     *health.Handler
+		events     *events.Handler
+		odds       *odds.Handler
+		teams      *teams.Handler
+		leagues    *leagues.Handler
+		smartMoney *smart_money.Handler
 	}
 }
 
@@ -74,6 +77,10 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	server.handlers.teams = teams.NewHandler(queries, log)
 	server.handlers.leagues = leagues.NewHandler(queries, log)
 
+	// Initialize smart money tracker service and handler
+	smartMoneyTracker := services.NewSmartMoneyTracker(queries)
+	server.handlers.smartMoney = smart_money.NewHandler(queries, smartMoneyTracker)
+
 	// Setup routes
 	server.setupRoutes()
 
@@ -98,6 +105,26 @@ func (s *Server) setupRoutes() {
 
 	// Odds endpoints
 	s.router.HandleFunc("/api/odds/big-movers", middleware.CORS(s.handlers.odds.BigMovers))
+
+	// Smart Money endpoints
+	s.router.HandleFunc("/api/smart-money/big-movers", middleware.CORS(s.handlers.smartMoney.GetBigMovers))
+	s.router.HandleFunc("/api/smart-money/alerts", middleware.CORS(s.handlers.smartMoney.GetAlerts))
+	s.router.HandleFunc("/api/smart-money/value-spots", middleware.CORS(s.handlers.smartMoney.GetValueSpots))
+	s.router.HandleFunc("/api/smart-money/dashboard", middleware.CORS(s.handlers.smartMoney.GetDashboard))
+	s.router.HandleFunc("/api/smart-money/alerts/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
+		// Handle both /alerts/{id}/view and /alerts/{id}/click
+		if r.Method == "POST" {
+			if r.URL.Path[len(r.URL.Path)-5:] == "/view" {
+				s.handlers.smartMoney.MarkAlertViewed(w, r)
+			} else if r.URL.Path[len(r.URL.Path)-6:] == "/click" {
+				s.handlers.smartMoney.MarkAlertClicked(w, r)
+			} else {
+				http.Error(w, "Not Found", http.StatusNotFound)
+			}
+		} else {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 
 	// Events endpoints
 	s.router.HandleFunc("/api/events", middleware.CORS(s.handlers.events.List))

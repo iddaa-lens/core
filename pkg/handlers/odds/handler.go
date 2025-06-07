@@ -83,15 +83,14 @@ func (h *Handler) BigMovers(w http.ResponseWriter, r *http.Request) {
 			Str("action", "query_movements_failed").
 			Msg("Failed to query odds movements")
 
-		// Return mock data as fallback
-		mockData := h.getMockData()
-		h.logger.Info().
-			Str("action", "using_mock_data").
-			Int("count", len(mockData)).
-			Msg("Using mock data due to database query failure")
+		// Return empty data when database query fails
+		h.logger.Error().
+			Err(err).
+			Str("action", "returning_empty").
+			Msg("Returning empty data due to database query failure")
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(mockData)
+		_ = json.NewEncoder(w).Encode([]api.BigMoverResponse{})
 		return
 	}
 
@@ -193,13 +192,11 @@ func (h *Handler) BigMovers(w http.ResponseWriter, r *http.Request) {
 		movers = append(movers, mover)
 	}
 
-	// If no real data, use mock data
+	// Log if no data found
 	if len(movers) == 0 {
-		movers = h.getMockData()
 		h.logger.Info().
-			Str("action", "using_mock_data").
-			Int("count", len(movers)).
-			Msg("No recent movements found, using mock data")
+			Str("action", "no_data_found").
+			Msg("No recent movements found in the specified time period")
 	}
 
 	// Log response info
@@ -245,55 +242,4 @@ func (h *Handler) getFloat64Ptr(n pgtype.Numeric) *float64 {
 		}
 	}
 	return nil
-}
-
-// getMockData returns mock odds movement data for fallback
-func (h *Handler) getMockData() []api.BigMoverResponse {
-	return []api.BigMoverResponse{
-		{
-			EventSlug:        "fenerbahce-vs-galatasaray-2025-06-05",
-			Match:            "Fenerbahçe vs Galatasaray",
-			Sport:            "Football",
-			League:           "Süper Lig",
-			Market:           "1X2",
-			Outcome:          "1",
-			OpeningOdds:      1.20,
-			CurrentOdds:      3.70,
-			ChangePercentage: 208.33,
-			Multiplier:       3.08,
-			Direction:        "DRIFTING",
-			LastUpdated:      time.Now().Add(-30 * time.Minute),
-			EventTime:        time.Now().Add(2 * time.Hour),
-		},
-		{
-			EventSlug:        "besiktas-vs-trabzonspor-2025-06-05",
-			Match:            "Beşiktaş vs Trabzonspor",
-			Sport:            "Football",
-			League:           "Süper Lig",
-			Market:           "Over/Under 2.5",
-			Outcome:          "Over",
-			OpeningOdds:      2.10,
-			CurrentOdds:      1.55,
-			ChangePercentage: -26.19,
-			Multiplier:       0.74,
-			Direction:        "SHORTENING",
-			LastUpdated:      time.Now().Add(-15 * time.Minute),
-			EventTime:        time.Now().Add(4 * time.Hour),
-		},
-		{
-			EventSlug:        "antalyaspor-vs-konyaspor-2025-06-05",
-			Match:            "Antalyaspor vs Konyaspor",
-			Sport:            "Football",
-			League:           "Süper Lig",
-			Market:           "Both Teams to Score",
-			Outcome:          "Yes",
-			OpeningOdds:      1.65,
-			CurrentOdds:      2.40,
-			ChangePercentage: 45.45,
-			Multiplier:       1.45,
-			Direction:        "DRIFTING",
-			LastUpdated:      time.Now().Add(-45 * time.Minute),
-			EventTime:        time.Now().Add(6 * time.Hour),
-		},
-	}
 }

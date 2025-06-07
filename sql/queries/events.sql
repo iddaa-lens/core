@@ -9,6 +9,9 @@ JOIN teams at ON e.away_team_id = at.id
 JOIN leagues l ON e.league_id = l.id
 WHERE e.id = sqlc.arg(id);
 
+-- name: GetEventByID :one
+SELECT * FROM events WHERE id = sqlc.arg(id);
+
 -- name: GetEventByExternalID :one
 SELECT e.*, 
        ht.name as home_team_name,
@@ -119,3 +122,12 @@ WHERE e.event_date >= sqlc.arg(time_after)
   AND (sqlc.arg(sport_code) = '' OR s.code = sqlc.arg(sport_code))
   AND (sqlc.arg(league_name) = '' OR l.name ILIKE '%' || sqlc.arg(league_name) || '%')
   AND (sqlc.arg(status) = '' OR e.status = sqlc.arg(status));
+
+-- name: GetEventsByTeam :many
+SELECT e.*, l.name as league_name
+FROM events e
+LEFT JOIN leagues l ON e.league_id = l.id
+WHERE (e.home_team_id = sqlc.arg(team_id) OR e.away_team_id = sqlc.arg(team_id))
+  AND e.event_date >= sqlc.arg(since_date)
+ORDER BY e.event_date DESC
+LIMIT sqlc.arg(limit_count);

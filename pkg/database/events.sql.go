@@ -360,6 +360,138 @@ func (q *Queries) GetEventByExternalIDSimple(ctx context.Context, externalID str
 	return i, err
 }
 
+const getEventByID = `-- name: GetEventByID :one
+SELECT id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at FROM events WHERE id = $1
+`
+
+func (q *Queries) GetEventByID(ctx context.Context, id int32) (Event, error) {
+	row := q.db.QueryRow(ctx, getEventByID, id)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.ExternalID,
+		&i.LeagueID,
+		&i.HomeTeamID,
+		&i.AwayTeamID,
+		&i.Slug,
+		&i.EventDate,
+		&i.Status,
+		&i.HomeScore,
+		&i.AwayScore,
+		&i.IsLive,
+		&i.MinuteOfMatch,
+		&i.Half,
+		&i.BettingVolumePercentage,
+		&i.VolumeRank,
+		&i.VolumeUpdatedAt,
+		&i.BulletinID,
+		&i.Version,
+		&i.SportID,
+		&i.BetProgram,
+		&i.Mbc,
+		&i.HasKingOdd,
+		&i.OddsCount,
+		&i.HasCombine,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getEventsByTeam = `-- name: GetEventsByTeam :many
+SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, l.name as league_name
+FROM events e
+LEFT JOIN leagues l ON e.league_id = l.id
+WHERE (e.home_team_id = $1 OR e.away_team_id = $1)
+  AND e.event_date >= $2
+ORDER BY e.event_date DESC
+LIMIT $3
+`
+
+type GetEventsByTeamParams struct {
+	TeamID     pgtype.Int4      `db:"team_id" json:"team_id"`
+	SinceDate  pgtype.Timestamp `db:"since_date" json:"since_date"`
+	LimitCount int32            `db:"limit_count" json:"limit_count"`
+}
+
+type GetEventsByTeamRow struct {
+	ID                      int32            `db:"id" json:"id"`
+	ExternalID              string           `db:"external_id" json:"external_id"`
+	LeagueID                pgtype.Int4      `db:"league_id" json:"league_id"`
+	HomeTeamID              pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID              pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	Slug                    string           `db:"slug" json:"slug"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	Status                  string           `db:"status" json:"status"`
+	HomeScore               pgtype.Int4      `db:"home_score" json:"home_score"`
+	AwayScore               pgtype.Int4      `db:"away_score" json:"away_score"`
+	IsLive                  pgtype.Bool      `db:"is_live" json:"is_live"`
+	MinuteOfMatch           pgtype.Int4      `db:"minute_of_match" json:"minute_of_match"`
+	Half                    pgtype.Int4      `db:"half" json:"half"`
+	BettingVolumePercentage pgtype.Numeric   `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	VolumeRank              pgtype.Int4      `db:"volume_rank" json:"volume_rank"`
+	VolumeUpdatedAt         pgtype.Timestamp `db:"volume_updated_at" json:"volume_updated_at"`
+	BulletinID              pgtype.Int8      `db:"bulletin_id" json:"bulletin_id"`
+	Version                 pgtype.Int8      `db:"version" json:"version"`
+	SportID                 pgtype.Int4      `db:"sport_id" json:"sport_id"`
+	BetProgram              pgtype.Int4      `db:"bet_program" json:"bet_program"`
+	Mbc                     pgtype.Int4      `db:"mbc" json:"mbc"`
+	HasKingOdd              pgtype.Bool      `db:"has_king_odd" json:"has_king_odd"`
+	OddsCount               pgtype.Int4      `db:"odds_count" json:"odds_count"`
+	HasCombine              pgtype.Bool      `db:"has_combine" json:"has_combine"`
+	CreatedAt               pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt               pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	LeagueName              pgtype.Text      `db:"league_name" json:"league_name"`
+}
+
+func (q *Queries) GetEventsByTeam(ctx context.Context, arg GetEventsByTeamParams) ([]GetEventsByTeamRow, error) {
+	rows, err := q.db.Query(ctx, getEventsByTeam, arg.TeamID, arg.SinceDate, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetEventsByTeamRow{}
+	for rows.Next() {
+		var i GetEventsByTeamRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.LeagueID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
+			&i.Slug,
+			&i.EventDate,
+			&i.Status,
+			&i.HomeScore,
+			&i.AwayScore,
+			&i.IsLive,
+			&i.MinuteOfMatch,
+			&i.Half,
+			&i.BettingVolumePercentage,
+			&i.VolumeRank,
+			&i.VolumeUpdatedAt,
+			&i.BulletinID,
+			&i.Version,
+			&i.SportID,
+			&i.BetProgram,
+			&i.Mbc,
+			&i.HasKingOdd,
+			&i.OddsCount,
+			&i.HasCombine,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LeagueName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEventsByDate = `-- name: ListEventsByDate :many
 SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, 
        ht.name as home_team_name,

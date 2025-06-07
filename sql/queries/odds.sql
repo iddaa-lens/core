@@ -94,6 +94,9 @@ WHERE oh.event_id = sqlc.arg(event_id)
 ORDER BY oh.recorded_at DESC
 LIMIT sqlc.arg(limit_count);
 
+-- name: GetOddsHistoryByID :one
+SELECT * FROM odds_history WHERE id = sqlc.arg(id);
+
 -- name: GetBigMovers :many
 SELECT 
     oh.*,
@@ -105,4 +108,15 @@ JOIN market_types mt ON oh.market_type_id = mt.id
 WHERE ABS(oh.change_percentage) > sqlc.arg(min_change_pct)
 AND oh.recorded_at > sqlc.arg(since_time)
 ORDER BY ABS(oh.change_percentage) DESC
+LIMIT sqlc.arg(limit_count);
+
+-- name: GetRecentOddsHistory :many
+SELECT oh.*, e.event_date, e.is_live, mt.name as market_name, mt.code as market_code
+FROM odds_history oh
+JOIN events e ON oh.event_id = e.id
+JOIN market_types mt ON oh.market_type_id = mt.id
+WHERE oh.recorded_at >= sqlc.arg(since_time)
+AND e.event_date > NOW()
+AND ABS(oh.change_percentage) >= sqlc.arg(min_change_pct)
+ORDER BY oh.recorded_at DESC
 LIMIT sqlc.arg(limit_count);

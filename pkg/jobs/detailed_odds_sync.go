@@ -110,6 +110,10 @@ func (j *DetailedOddsSyncJob) Execute(ctx context.Context) error {
 
 // syncEventDetails fetches and processes detailed odds for a specific event
 func (j *DetailedOddsSyncJob) syncEventDetails(ctx context.Context, eventID int, externalEventID int) error {
+	// Add per-event timeout to prevent individual events from blocking the entire job
+	eventCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
 	// Fetch detailed event data using the external event ID for the API call
 	eventResponse, err := j.client.GetSingleEvent(externalEventID)
 	if err != nil {
@@ -117,5 +121,5 @@ func (j *DetailedOddsSyncJob) syncEventDetails(ctx context.Context, eventID int,
 	}
 
 	// Process the detailed markets and odds using the internal event ID
-	return j.events.ProcessDetailedMarkets(ctx, eventID, eventResponse.Data.Markets, time.Now())
+	return j.events.ProcessDetailedMarkets(eventCtx, eventID, eventResponse.Data.Markets, time.Now())
 }

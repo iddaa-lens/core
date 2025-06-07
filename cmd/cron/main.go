@@ -21,7 +21,7 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		jobName     = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment)")
+		jobName     = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor)")
 		once        = flag.Bool("once", false, "Run job once and exit")
 		healthCheck = flag.Bool("health-check", false, "Perform health check and exit")
 	)
@@ -41,8 +41,24 @@ func main() {
 
 	cfg := config.Load()
 
-	// Connect to database
-	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
+	// Connect to database with optimized pool configuration
+	dbConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL())
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Str("action", "db_config_parse_failed").
+			Msg("Failed to parse database config")
+	}
+
+	// Configure connection pool for better performance
+	dbConfig.MaxConns = 20 // Maximum number of connections
+	dbConfig.MinConns = 5  // Minimum number of connections
+	dbConfig.MaxConnLifetime = time.Hour
+	dbConfig.MaxConnIdleTime = time.Minute * 30
+	dbConfig.HealthCheckPeriod = time.Minute
+	dbConfig.ConnConfig.ConnectTimeout = time.Second * 10
+
+	db, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
 	if err != nil {
 		log.Fatal().
 			Err(err).
@@ -61,6 +77,7 @@ func main() {
 	distributionService := services.NewDistributionService(queries, iddaaClient)
 	marketConfigService := services.NewMarketConfigService(queries, iddaaClient)
 	statisticsService := services.NewStatisticsService(queries, iddaaClient)
+	smartMoneyTracker := services.NewSmartMoneyTracker(queries)
 
 	// Create job manager
 	jobManager := jobs.NewJobManager()
@@ -145,6 +162,12 @@ func main() {
 	apiFootballTeamEnrichmentJob := jobs.NewAPIFootballTeamEnrichmentJob(queries)
 	if err := jobManager.RegisterJob(apiFootballTeamEnrichmentJob); err != nil {
 		log.Fatalf("Failed to register API-Football team enrichment job: %v", err)
+	}
+
+	// Register Smart Money Processor job
+	smartMoneyProcessorJob := jobs.NewSmartMoneyProcessorJob(queries, smartMoneyTracker)
+	if err := jobManager.RegisterJob(smartMoneyProcessorJob); err != nil {
+		log.Fatalf("Failed to register Smart Money Processor job: %v", err)
 	}
 
 	// Handle single job execution
@@ -237,8 +260,14 @@ func main() {
 				log.Fatalf("Failed to execute API-Football team enrichment job: %v", err)
 			}
 			log.Println("API-Football team enrichment completed successfully")
+		case "smart_money_processor":
+			log.Println("Running Smart Money Processor job once...")
+			if err := smartMoneyProcessorJob.Execute(ctx); err != nil {
+				log.Fatalf("Failed to execute Smart Money Processor job: %v", err)
+			}
+			log.Println("Smart Money Processor completed successfully")
 		default:
-			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment", *jobName)
+			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor", *jobName)
 		}
 		return
 	}

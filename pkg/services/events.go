@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/iddaa-lens/core/pkg/database"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type EventsService struct {
@@ -20,15 +22,24 @@ type EventsService struct {
 	rateLimiter *time.Ticker
 	mutex       sync.Mutex
 	logger      *logger.Logger
+	// Market type cache to reduce database calls
+	marketTypeCache map[string]database.MarketType
+	marketTypeMutex sync.RWMutex
 }
 
 func NewEventsService(db *database.Queries, client *IddaaClient) *EventsService {
-	return &EventsService{
-		db:          db,
-		client:      client,
-		rateLimiter: time.NewTicker(100 * time.Millisecond), // Max 10 requests per second
-		logger:      logger.New("events-service"),
+	service := &EventsService{
+		db:              db,
+		client:          client,
+		rateLimiter:     time.NewTicker(100 * time.Millisecond), // Max 10 requests per second
+		logger:          logger.New("events-service"),
+		marketTypeCache: make(map[string]database.MarketType),
 	}
+
+	// Pre-populate market type cache on startup to reduce database calls
+	go service.preloadMarketTypeCache()
+
+	return service
 }
 
 // ProcessEventsResponse processes the API response and saves events, teams, and odds
@@ -37,22 +48,50 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 		return fmt.Errorf("invalid API response: isSuccess=%t", response.IsSuccess)
 	}
 
+	log := logger.WithContext(ctx, "process-events")
+	var processErrors []error
+	successCount := 0
+
 	for _, event := range response.Data.Events {
+		// Create a timeout context for each event to prevent one event from blocking others
+		eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+
 		// Process home and away teams
-		homeTeamID, err := s.upsertTeam(ctx, event.HomeTeam, event.HomeTeam)
+		homeTeamID, err := s.upsertTeam(eventCtx, event.HomeTeam, event.HomeTeam)
 		if err != nil {
-			return fmt.Errorf("failed to upsert home team %s: %w", event.HomeTeam, err)
+			cancel()
+			log.Error().
+				Err(err).
+				Str("team_name", event.HomeTeam).
+				Int("event_id", event.ID).
+				Msg("Failed to upsert home team")
+			processErrors = append(processErrors, fmt.Errorf("home team %s: %w", event.HomeTeam, err))
+			continue
 		}
 
-		awayTeamID, err := s.upsertTeam(ctx, event.AwayTeam, event.AwayTeam)
+		awayTeamID, err := s.upsertTeam(eventCtx, event.AwayTeam, event.AwayTeam)
 		if err != nil {
-			return fmt.Errorf("failed to upsert away team %s: %w", event.AwayTeam, err)
+			cancel()
+			log.Error().
+				Err(err).
+				Str("team_name", event.AwayTeam).
+				Int("event_id", event.ID).
+				Msg("Failed to upsert away team")
+			processErrors = append(processErrors, fmt.Errorf("away team %s: %w", event.AwayTeam, err))
+			continue
 		}
 
 		// Get competition ID
-		competitionID, err := s.getCompetitionID(ctx, event.CompetitionID)
+		competitionID, err := s.getCompetitionID(eventCtx, event.CompetitionID)
 		if err != nil {
-			return fmt.Errorf("failed to get competition %d: %w", event.CompetitionID, err)
+			cancel()
+			log.Error().
+				Err(err).
+				Int("competition_id", event.CompetitionID).
+				Int("event_id", event.ID).
+				Msg("Failed to get competition")
+			processErrors = append(processErrors, fmt.Errorf("competition %d: %w", event.CompetitionID, err))
+			continue
 		}
 
 		// Convert Unix timestamp to time (iddaa returns seconds, not milliseconds)
@@ -72,7 +111,7 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 		statusStr := s.convertEventStatus(event.Status)
 
 		// Upsert event with all Iddaa fields
-		eventRecord, err := s.db.UpsertEvent(ctx, database.UpsertEventParams{
+		eventRecord, err := s.db.UpsertEvent(eventCtx, database.UpsertEventParams{
 			ExternalID: strconv.Itoa(event.ID),
 			LeagueID:   pgtype.Int4{Int32: int32(competitionID), Valid: competitionID > 0},
 			HomeTeamID: pgtype.Int4{Int32: int32(homeTeamID), Valid: true},
@@ -92,12 +131,18 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 			IsLive:     pgtype.Bool{Bool: event.IsLive, Valid: true},
 		})
 		if err != nil {
-			return fmt.Errorf("failed to upsert event %d: %w", event.ID, err)
+			cancel()
+			log.Error().
+				Err(err).
+				Int("event_id", event.ID).
+				Msg("Failed to upsert event")
+			processErrors = append(processErrors, fmt.Errorf("event %d: %w", event.ID, err))
+			continue
 		}
 
 		// Skip bulk markets processing - use detailed endpoint only for better accuracy
 		// Process detailed odds for this specific event (more comprehensive than bulk)
-		err = s.fetchAndProcessDetailedOdds(ctx, int(eventRecord.ID), event.ID)
+		err = s.fetchAndProcessDetailedOdds(eventCtx, int(eventRecord.ID), event.ID)
 		if err != nil {
 			// Fallback to bulk markets if detailed fetch fails
 			s.logger.Warn().
@@ -105,11 +150,30 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 				Int("event_id", event.ID).
 				Str("action", "fallback_to_bulk").
 				Msg("Failed to fetch detailed odds, using bulk markets")
-			err = s.processMarkets(ctx, int(eventRecord.ID), event.Markets, time.Now())
+			err = s.processMarkets(eventCtx, int(eventRecord.ID), event.Markets, time.Now())
 			if err != nil {
-				return fmt.Errorf("failed to process fallback markets for event %d: %w", event.ID, err)
+				log.Error().
+					Err(err).
+					Int("event_id", event.ID).
+					Msg("Failed to process fallback markets")
+				processErrors = append(processErrors, fmt.Errorf("fallback markets for event %d: %w", event.ID, err))
 			}
 		}
+
+		cancel()
+		successCount++
+	}
+
+	// Log summary
+	log.Info().
+		Int("success_count", successCount).
+		Int("error_count", len(processErrors)).
+		Int("total_events", len(response.Data.Events)).
+		Msg("Completed processing events response")
+
+	// Return error if all events failed
+	if successCount == 0 && len(processErrors) > 0 {
+		return fmt.Errorf("all events failed to process: %v", processErrors[0])
 	}
 
 	return nil
@@ -181,17 +245,20 @@ func (s *EventsService) getCompetitionID(ctx context.Context, iddaaCompetitionID
 // processMarkets processes all markets and their odds for an event
 func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets []models.IddaaMarket, _ time.Time) error {
 	for _, market := range markets {
-		// Convert market subtype to market type code
-		marketTypeCode := s.convertMarketSubType(market.SubType)
+		// Use consistent code format: TYPE_SUBTYPE (same as processSingleMarket)
+		marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
 
-		// Upsert market type
-		marketType, err := s.db.UpsertMarketType(ctx, database.UpsertMarketTypeParams{
-			Code:        marketTypeCode,
-			Name:        s.getMarketTypeName(market.SubType),
-			Description: pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
-		})
+		// Get or create market type with caching to reduce database load
+		marketType, err := s.getOrCreateMarketType(ctx, marketTypeCode, market)
 		if err != nil {
-			return fmt.Errorf("failed to upsert market type %s: %w", marketTypeCode, err)
+			// Log error but continue processing other markets instead of failing completely
+			s.logger.Error().
+				Err(err).
+				Str("market_type_code", marketTypeCode).
+				Int("event_id", eventID).
+				Int("market_id", market.ID).
+				Msg("Failed to get or create market type, skipping this market")
+			continue
 		}
 
 		// Process outcomes (odds)
@@ -352,75 +419,63 @@ func (s *EventsService) convertEventStatus(status int) string {
 	}
 }
 
-// convertMarketSubType converts iddaa market subtype to our market type code
-func (s *EventsService) convertMarketSubType(subType int) string {
-	switch subType {
-	case 1:
-		return "1X2"
-	case 60:
-		return "OU_0_5"
-	case 101:
-		return "OU_2_5"
-	case 89:
-		return "BTTS"
-	case 88:
-		return "HT"
-	case 92:
-		return "DC"
-	case 77:
-		return "DNB"
-	case 91:
-		return "OE"
-	case 720:
-		return "RED_CARD"
-	case 36:
-		return "EXACT_SCORE"
-	case 603:
-		return "HOME_OU"
-	case 604:
-		return "AWAY_OU"
-	case 722:
-		return "HOME_CORNER"
-	case 723:
-		return "AWAY_CORNER"
-	default:
-		return fmt.Sprintf("MARKET_%d", subType)
-	}
-}
-
 // getMarketTypeName returns human-readable market type name
 func (s *EventsService) getMarketTypeName(subType int) string {
 	switch subType {
 	case 1:
-		return "Match Result"
+		return "Maç Sonucu"
 	case 60:
-		return "Over/Under 0.5 Goals"
+		return "Alt/Üst 0.5 Gol"
 	case 101:
-		return "Over/Under 2.5 Goals"
+		return "Alt/Üst 2.5 Gol"
 	case 89:
-		return "Both Teams to Score"
+		return "İki Takım da Gol Atar"
 	case 88:
-		return "Half Time Result"
+		return "İlk Yarı Sonucu"
 	case 92:
-		return "Double Chance"
+		return "Çifte Şans"
 	case 77:
-		return "Draw No Bet"
+		return "Beraberlik Yoksa İade"
 	case 91:
-		return "Total Goals Odd/Even"
+		return "Toplam Gol Tek/Çift"
 	case 720:
-		return "Red Card"
+		return "Kırmızı Kart"
 	case 36:
-		return "Exact Score"
+		return "Tam Skor"
 	case 603:
-		return "Home Team Over/Under Goals"
+		return "Ev Sahibi Alt/Üst Gol"
 	case 604:
-		return "Away Team Over/Under Goals"
+		return "Deplasman Alt/Üst Gol"
 	case 722:
-		return "Home Team Corner Kicks"
+		return "Ev Sahibi Korner"
 	case 723:
-		return "Away Team Corner Kicks"
+		return "Deplasman Korner"
+	case 7:
+		return "Alt/Üst Gol"
+	case 4:
+		return "Toplam Gol Sayısı"
+	case 85:
+		return "Gol Atacak Takım"
+	case 86:
+		return "Tam Skor"
+	case 87:
+		return "İlk Gol"
+	case 90:
+		return "Her İki Yarı"
+	case 698:
+		return "Penaltı Var/Yok"
+	case 699:
+		return "Kırmızı Kart Var/Yok"
+	case 717:
+		return "İlk Yarı Tam Skor"
+	case 718:
+		return "Yarı/Maç Sonucu"
+	case 724:
+		return "Korner Sayısı"
+	case 100:
+		return "Handikap"
 	default:
-		return fmt.Sprintf("Market Type %d", subType)
+		return fmt.Sprintf("Pazar Tipi %d", subType)
 	}
 }
 
@@ -467,7 +522,13 @@ func (s *EventsService) ProcessDetailedMarkets(ctx context.Context, eventID int,
 		err := s.processSingleMarket(ctx, eventID, standardMarket, timestamp)
 		if err != nil {
 			// Log error but continue processing other markets
-			fmt.Printf("Failed to process detailed market %d for event %d: %v\n", market.ID, eventID, err)
+			logger.WithContext(ctx, "process-detailed-markets").Error().
+				Err(err).
+				Int("market_id", market.ID).
+				Int("event_id", eventID).
+				Int("market_type", market.Type).
+				Int("market_subtype", market.SubType).
+				Msg("Failed to process detailed market")
 		}
 	}
 	return nil
@@ -478,11 +539,26 @@ func (s *EventsService) processSingleMarket(ctx context.Context, eventID int, ma
 	// Create market type code similar to existing logic
 	marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
 
+	// Generate slug from code (same logic as SQL: LOWER(REPLACE(REPLACE(code, '_', '-'), ' ', '-')))
+	slug := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(marketTypeCode, "_", "-"), " ", "-"))
+
 	// Upsert market type
 	marketType, err := s.db.UpsertMarketType(ctx, database.UpsertMarketTypeParams{
-		Code:        marketTypeCode,
-		Name:        s.getMarketTypeName(market.SubType),
-		Description: pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
+		Code:                  marketTypeCode,
+		Name:                  s.getMarketTypeName(market.SubType),
+		Slug:                  slug,
+		Description:           pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
+		IddaaMarketID:         pgtype.Int4{Int32: int32(market.ID), Valid: true},
+		IsLive:                pgtype.Bool{Valid: false}, // Not set
+		MarketType:            pgtype.Int4{Int32: int32(market.Type), Valid: true},
+		MinMarketDefaultValue: pgtype.Int4{Valid: false}, // Not set
+		MaxMarketLimitValue:   pgtype.Int4{Valid: false}, // Not set
+		Priority:              pgtype.Int4{Valid: false}, // Not set
+		SportType:             pgtype.Int4{Valid: false}, // Not set
+		MarketSubType:         pgtype.Int4{Int32: int32(market.SubType), Valid: true},
+		MinDefaultValue:       pgtype.Int4{Valid: false}, // Not set
+		MaxLimitValue:         pgtype.Int4{Valid: false}, // Not set
+		IsActive:              pgtype.Bool{Bool: true, Valid: true},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to upsert market type %s: %w", marketTypeCode, err)
@@ -529,4 +605,99 @@ func (s *EventsService) processSingleMarket(ctx context.Context, eventID int, ma
 	}
 
 	return nil
+}
+
+// getOrCreateMarketType gets a market type from cache or creates it in database
+func (s *EventsService) getOrCreateMarketType(ctx context.Context, marketTypeCode string, market models.IddaaMarket) (database.MarketType, error) {
+	// Check cache first
+	s.marketTypeMutex.RLock()
+	if cachedMarketType, exists := s.marketTypeCache[marketTypeCode]; exists {
+		s.marketTypeMutex.RUnlock()
+		return cachedMarketType, nil
+	}
+	s.marketTypeMutex.RUnlock()
+
+	// Not in cache, try to get from database first
+	marketType, err := s.db.GetMarketType(ctx, marketTypeCode)
+	if err == nil {
+		// Found in database, add to cache
+		s.marketTypeMutex.Lock()
+		s.marketTypeCache[marketTypeCode] = marketType
+		s.marketTypeMutex.Unlock()
+		return marketType, nil
+	}
+
+	// Not found in database, create with shorter timeout and retry logic
+	marketCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	// Generate slug from code (same logic as SQL: LOWER(REPLACE(REPLACE(code, '_', '-'), ' ', '-')))
+	slug := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(marketTypeCode, "_", "-"), " ", "-"))
+
+	// Use exponential backoff for retries
+	maxRetries := 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		marketType, err = s.db.UpsertMarketType(marketCtx, database.UpsertMarketTypeParams{
+			Code:                  marketTypeCode,
+			Name:                  s.getMarketTypeName(market.SubType),
+			Slug:                  slug,
+			Description:           pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
+			IddaaMarketID:         pgtype.Int4{Int32: int32(market.ID), Valid: true},
+			IsLive:                pgtype.Bool{Valid: false}, // Not set
+			MarketType:            pgtype.Int4{Int32: int32(market.Type), Valid: true},
+			MinMarketDefaultValue: pgtype.Int4{Valid: false}, // Not set
+			MaxMarketLimitValue:   pgtype.Int4{Valid: false}, // Not set
+			Priority:              pgtype.Int4{Valid: false}, // Not set
+			SportType:             pgtype.Int4{Valid: false}, // Not set
+			MarketSubType:         pgtype.Int4{Int32: int32(market.SubType), Valid: true},
+			MinDefaultValue:       pgtype.Int4{Valid: false}, // Not set
+			MaxLimitValue:         pgtype.Int4{Valid: false}, // Not set
+			IsActive:              pgtype.Bool{Bool: true, Valid: true},
+		})
+
+		if err == nil {
+			// Success! Add to cache and return
+			s.marketTypeMutex.Lock()
+			s.marketTypeCache[marketTypeCode] = marketType
+			s.marketTypeMutex.Unlock()
+			return marketType, nil
+		}
+
+		// If it's a timeout or temporary error, retry with exponential backoff
+		if attempt < maxRetries {
+			backoffDuration := time.Duration(50*(attempt+1)) * time.Millisecond
+			s.logger.Warn().
+				Err(err).
+				Str("market_type_code", marketTypeCode).
+				Int("attempt", attempt+1).
+				Dur("backoff", backoffDuration).
+				Msg("Market type upsert failed, retrying")
+			time.Sleep(backoffDuration)
+		}
+	}
+
+	return database.MarketType{}, fmt.Errorf("failed to upsert market type %s after %d attempts: %w", marketTypeCode, maxRetries+1, err)
+}
+
+// preloadMarketTypeCache loads existing market types into cache on startup
+func (s *EventsService) preloadMarketTypeCache() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	marketTypes, err := s.db.ListMarketTypes(ctx)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to preload market type cache")
+		return
+	}
+
+	s.marketTypeMutex.Lock()
+	defer s.marketTypeMutex.Unlock()
+
+	for _, marketType := range marketTypes {
+		s.marketTypeCache[marketType.Code] = marketType
+	}
+
+	s.logger.Info().
+		Int("count", len(marketTypes)).
+		Msg("Market type cache preloaded successfully")
 }

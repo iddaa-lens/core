@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/iddaa-lens/core/pkg/database"
 	"github.com/iddaa-lens/core/pkg/logger"
@@ -69,14 +70,17 @@ func (s *MarketConfigService) SyncMarketConfigs(ctx context.Context) error {
 }
 
 func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey string, config models.IddaaMarketConfig) error {
-	// Generate market type code from market key and subtype
-	// Market key format is like "2_821" where 2 is market type and 821 is subtype
-	marketTypeCode := fmt.Sprintf("MST_%d", config.MarketSubType)
+	// Use the market key as the code (e.g., "2_821") to match the format used in events processing
+	marketTypeCode := marketKey
 
-	// Use all fields from the API
+	// Generate slug from the Turkish name (same logic as other services)
+	slug := generateSlugFromName(config.Name)
+
+	// Use all fields from the API with Turkish names and descriptions
 	params := database.UpsertMarketTypeParams{
 		Code:                  marketTypeCode,
-		Name:                  config.Name,
+		Name:                  config.Name, // Already in Turkish from API
+		Slug:                  slug,
 		Description:           pgtype.Text{String: config.Description, Valid: config.Description != ""},
 		IddaaMarketID:         pgtype.Int4{Int32: int32(config.ID), Valid: true},
 		IsLive:                pgtype.Bool{Bool: config.IsLive, Valid: true},
@@ -106,4 +110,29 @@ func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey st
 		Bool("is_active", config.IsActive).
 		Msg("Synced market config")
 	return nil
+}
+
+// generateSlugFromName creates a URL-friendly slug from Turkish market name
+func generateSlugFromName(name string) string {
+	slug := strings.ToLower(name)
+	// Handle Turkish characters
+	slug = strings.ReplaceAll(slug, "ç", "c")
+	slug = strings.ReplaceAll(slug, "ğ", "g")
+	slug = strings.ReplaceAll(slug, "ı", "i")
+	slug = strings.ReplaceAll(slug, "ö", "o")
+	slug = strings.ReplaceAll(slug, "ş", "s")
+	slug = strings.ReplaceAll(slug, "ü", "u")
+	// Handle special characters
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.ReplaceAll(slug, "/", "-")
+	slug = strings.ReplaceAll(slug, "(", "")
+	slug = strings.ReplaceAll(slug, ")", "")
+	slug = strings.ReplaceAll(slug, ",", "")
+	slug = strings.ReplaceAll(slug, "{", "")
+	slug = strings.ReplaceAll(slug, "}", "")
+	slug = strings.ReplaceAll(slug, "[", "")
+	slug = strings.ReplaceAll(slug, "]", "")
+	slug = strings.ReplaceAll(slug, ":", "")
+	slug = strings.ReplaceAll(slug, ".", "")
+	return slug
 }

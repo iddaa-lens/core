@@ -118,16 +118,19 @@ func (q *Queries) ListMarketTypes(ctx context.Context) ([]MarketType, error) {
 }
 
 const upsertMarketType = `-- name: UpsertMarketType :one
-INSERT INTO market_types (code, name, description, iddaa_market_id, is_live, market_type, 
+INSERT INTO market_types (code, name, slug, description, iddaa_market_id, is_live, market_type, 
                          min_market_default_value, max_market_limit_value, priority, sport_type,
                          market_sub_type, min_default_value, max_limit_value, is_active)
-VALUES ($1, $2, $3, $4,
-        $5, $6, $7,
-        $8, $9, $10,
-        $11, $12, $13,
-        $14)
+VALUES ($1, $2, 
+        $3, 
+        $4, $5,
+        $6, $7, $8,
+        $9, $10, $11,
+        $12, $13, $14,
+        $15)
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
+    slug = EXCLUDED.slug,
     description = EXCLUDED.description,
     iddaa_market_id = EXCLUDED.iddaa_market_id,
     is_live = EXCLUDED.is_live,
@@ -147,6 +150,7 @@ RETURNING id, code, name, slug, description, iddaa_market_id, is_live, market_ty
 type UpsertMarketTypeParams struct {
 	Code                  string      `db:"code" json:"code"`
 	Name                  string      `db:"name" json:"name"`
+	Slug                  string      `db:"slug" json:"slug"`
 	Description           pgtype.Text `db:"description" json:"description"`
 	IddaaMarketID         pgtype.Int4 `db:"iddaa_market_id" json:"iddaa_market_id"`
 	IsLive                pgtype.Bool `db:"is_live" json:"is_live"`
@@ -165,6 +169,7 @@ func (q *Queries) UpsertMarketType(ctx context.Context, arg UpsertMarketTypePara
 	row := q.db.QueryRow(ctx, upsertMarketType,
 		arg.Code,
 		arg.Name,
+		arg.Slug,
 		arg.Description,
 		arg.IddaaMarketID,
 		arg.IsLive,

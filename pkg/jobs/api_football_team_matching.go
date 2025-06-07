@@ -294,7 +294,7 @@ func (j *APIFootballTeamMatchingJob) storeTeamMapping(ctx context.Context, team 
 		TranslatedLeague:     pgtype.Text{String: translations.League, Valid: translations.League != ""},
 		OriginalTeamName:     pgtype.Text{String: team.Name, Valid: true},
 		OriginalCountry:      pgtype.Text{String: team.Country.String, Valid: team.Country.Valid},
-		OriginalLeague:       pgtype.Text{String: translations.League, Valid: translations.League != ""}, // TODO: Get actual league name
+		OriginalLeague:       pgtype.Text{String: translations.League, Valid: translations.League != ""}, // League from team context or empty
 		MatchFactors:         matchFactorsJSON,
 		NeedsReview:          pgtype.Bool{Bool: needsReview, Valid: true},
 		AiTranslationUsed:    pgtype.Bool{Bool: j.matcher.UsesAI(), Valid: true},
@@ -322,8 +322,27 @@ func (j *APIFootballTeamMatchingJob) getTeamTranslations(ctx context.Context, te
 		country = enhancedTranslator.TranslateCountryName(team.Country.String)
 	}
 
-	// TODO: Get league name for the team
+	// Get league name from team's recent event participation
 	league := ""
+
+	// Look up recent events to find league context
+	recentEvents, err := j.db.GetEventsByTeam(ctx, database.GetEventsByTeamParams{
+		TeamID:     pgtype.Int4{Int32: team.ID, Valid: true},
+		SinceDate:  pgtype.Timestamp{Time: time.Now().Add(-60 * 24 * time.Hour), Valid: true}, // Look back 60 days
+		LimitCount: 3,                                                                         // Check a few recent events
+	})
+
+	if err == nil && len(recentEvents) > 0 {
+		// Use league name from the most recent event that has one
+		for _, event := range recentEvents {
+			if event.LeagueName.Valid && event.LeagueName.String != "" {
+				// Translate the league name
+				enhancedTranslator := services.NewEnhancedTranslator(os.Getenv("OPENAI_API_KEY"))
+				league, _ = enhancedTranslator.TranslateLeagueName(ctx, event.LeagueName.String, country)
+				break
+			}
+		}
+	}
 
 	return &services.TeamTranslations{
 		TeamName: teamName,

@@ -34,7 +34,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query parameters
 	notMapped := r.URL.Query().Get("not_mapped") == "true"
-	
+
 	var teams []database.Team
 	var err error
 
@@ -124,9 +124,9 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 		InternalTeamID:    int32(teamID),
 		FootballApiTeamID: req.ApiFootballID,
 		Confidence: pgtype.Numeric{
-			Int: nil, // Will be set to a default value by the database
-			Exp: 0,
-			NaN: false,
+			Int:   nil, // Will be set to a default value by the database
+			Exp:   0,
+			NaN:   false,
 			Valid: true,
 		},
 		MappingMethod: "manual",
@@ -138,8 +138,10 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(api.Response{
+	if err := json.NewEncoder(w).Encode(api.Response{
 		Success: true,
 		Message: "Team mapping updated successfully",
-	})
+	}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }

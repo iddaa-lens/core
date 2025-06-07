@@ -29,23 +29,35 @@ type BettingVolumeHistory struct {
 }
 
 type BigMover struct {
-	EventID            int32            `db:"event_id" json:"event_id"`
-	EventSlug          string           `db:"event_slug" json:"event_slug"`
-	HomeTeam           string           `db:"home_team" json:"home_team"`
-	AwayTeam           string           `db:"away_team" json:"away_team"`
-	EventDate          pgtype.Timestamp `db:"event_date" json:"event_date"`
-	Status             string           `db:"status" json:"status"`
-	MarketCode         string           `db:"market_code" json:"market_code"`
-	MarketName         string           `db:"market_name" json:"market_name"`
-	Outcome            string           `db:"outcome" json:"outcome"`
-	OpeningValue       pgtype.Numeric   `db:"opening_value" json:"opening_value"`
-	CurrentValue       pgtype.Numeric   `db:"current_value" json:"current_value"`
-	HighestValue       pgtype.Numeric   `db:"highest_value" json:"highest_value"`
-	LowestValue        pgtype.Numeric   `db:"lowest_value" json:"lowest_value"`
-	MovementPercentage pgtype.Numeric   `db:"movement_percentage" json:"movement_percentage"`
-	Multiplier         int32            `db:"multiplier" json:"multiplier"`
-	TrendDirection     string           `db:"trend_direction" json:"trend_direction"`
-	LastUpdated        pgtype.Timestamp `db:"last_updated" json:"last_updated"`
+	ID                   int32            `db:"id" json:"id"`
+	EventID              pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID         pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome              string           `db:"outcome" json:"outcome"`
+	OddsValue            pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue        pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds          pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount         pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage     pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier           pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt           pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator  pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement    pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel    pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff     pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	EventExternalID      string           `db:"event_external_id" json:"event_external_id"`
+	HomeTeamID           pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID           pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	EventDate            pgtype.Timestamp `db:"event_date" json:"event_date"`
+	EventStatus          string           `db:"event_status" json:"event_status"`
+	IsLive               pgtype.Bool      `db:"is_live" json:"is_live"`
+	MarketCode           string           `db:"market_code" json:"market_code"`
+	MarketName           string           `db:"market_name" json:"market_name"`
+	LeagueName           pgtype.Text      `db:"league_name" json:"league_name"`
+	SportName            pgtype.Text      `db:"sport_name" json:"sport_name"`
+	HomeTeamName         pgtype.Text      `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName         pgtype.Text      `db:"away_team_name" json:"away_team_name"`
+	MinutesToKickoffCalc int32            `db:"minutes_to_kickoff_calc" json:"minutes_to_kickoff_calc"`
+	AlertMessage         string           `db:"alert_message" json:"alert_message"`
 }
 
 type ContrarianBet struct {
@@ -204,18 +216,40 @@ type MatchStatistic struct {
 	UpdatedAt     pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
-type OddsHistory struct {
+type MovementAlert struct {
 	ID               int32            `db:"id" json:"id"`
-	EventID          pgtype.Int4      `db:"event_id" json:"event_id"`
-	MarketTypeID     pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
-	Outcome          string           `db:"outcome" json:"outcome"`
-	OddsValue        pgtype.Numeric   `db:"odds_value" json:"odds_value"`
-	PreviousValue    pgtype.Numeric   `db:"previous_value" json:"previous_value"`
-	WinningOdds      pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount     pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	OddsHistoryID    int32            `db:"odds_history_id" json:"odds_history_id"`
+	AlertType        string           `db:"alert_type" json:"alert_type"`
+	Severity         string           `db:"severity" json:"severity"`
+	Title            string           `db:"title" json:"title"`
+	Message          string           `db:"message" json:"message"`
 	ChangePercentage pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
 	Multiplier       pgtype.Numeric   `db:"multiplier" json:"multiplier"`
-	RecordedAt       pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	ConfidenceScore  pgtype.Numeric   `db:"confidence_score" json:"confidence_score"`
+	MinutesToKickoff pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	CreatedAt        pgtype.Timestamp `db:"created_at" json:"created_at"`
+	ExpiresAt        pgtype.Timestamp `db:"expires_at" json:"expires_at"`
+	IsActive         pgtype.Bool      `db:"is_active" json:"is_active"`
+	Views            pgtype.Int4      `db:"views" json:"views"`
+	Clicks           pgtype.Int4      `db:"clicks" json:"clicks"`
+}
+
+type OddsHistory struct {
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
 }
 
 type OutcomeDistribution struct {
@@ -251,6 +285,79 @@ type Prediction struct {
 	ModelVersion     string           `db:"model_version" json:"model_version"`
 	FeaturesUsed     pgtype.Text      `db:"features_used" json:"features_used"`
 	CreatedAt        pgtype.Timestamp `db:"created_at" json:"created_at"`
+}
+
+type ReverseLineMovement struct {
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	EventExternalID     string           `db:"event_external_id" json:"event_external_id"`
+	EventDate           pgtype.Timestamp `db:"event_date" json:"event_date"`
+	IsLive              pgtype.Bool      `db:"is_live" json:"is_live"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
+	MarketName          string           `db:"market_name" json:"market_name"`
+	HomeTeamName        pgtype.Text      `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName        pgtype.Text      `db:"away_team_name" json:"away_team_name"`
+	AlertMessage        string           `db:"alert_message" json:"alert_message"`
+}
+
+type SharpMoneySpot struct {
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	EventExternalID     string           `db:"event_external_id" json:"event_external_id"`
+	EventDate           pgtype.Timestamp `db:"event_date" json:"event_date"`
+	IsLive              pgtype.Bool      `db:"is_live" json:"is_live"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
+	MarketName          string           `db:"market_name" json:"market_name"`
+	HomeTeamName        pgtype.Text      `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName        pgtype.Text      `db:"away_team_name" json:"away_team_name"`
+	ConfidenceLevel     string           `db:"confidence_level" json:"confidence_level"`
+	AlertMessage        string           `db:"alert_message" json:"alert_message"`
+}
+
+type SmartMoneyPreference struct {
+	ID                  int32            `db:"id" json:"id"`
+	UserID              string           `db:"user_id" json:"user_id"`
+	MinChangePercentage pgtype.Numeric   `db:"min_change_percentage" json:"min_change_percentage"`
+	MinMultiplier       pgtype.Numeric   `db:"min_multiplier" json:"min_multiplier"`
+	MinConfidenceScore  pgtype.Numeric   `db:"min_confidence_score" json:"min_confidence_score"`
+	BigMoverAlerts      pgtype.Bool      `db:"big_mover_alerts" json:"big_mover_alerts"`
+	ReverseLineAlerts   pgtype.Bool      `db:"reverse_line_alerts" json:"reverse_line_alerts"`
+	SharpMoneyAlerts    pgtype.Bool      `db:"sharp_money_alerts" json:"sharp_money_alerts"`
+	ValueSpotAlerts     pgtype.Bool      `db:"value_spot_alerts" json:"value_spot_alerts"`
+	PreferredSports     []byte           `db:"preferred_sports" json:"preferred_sports"`
+	PreferredLeagues    []byte           `db:"preferred_leagues" json:"preferred_leagues"`
+	MaxDailyAlerts      pgtype.Int4      `db:"max_daily_alerts" json:"max_daily_alerts"`
+	PushNotifications   pgtype.Bool      `db:"push_notifications" json:"push_notifications"`
+	QuietHoursStart     pgtype.Time      `db:"quiet_hours_start" json:"quiet_hours_start"`
+	QuietHoursEnd       pgtype.Time      `db:"quiet_hours_end" json:"quiet_hours_end"`
+	CreatedAt           pgtype.Timestamp `db:"created_at" json:"created_at"`
+	UpdatedAt           pgtype.Timestamp `db:"updated_at" json:"updated_at"`
 }
 
 type Sport struct {
@@ -313,4 +420,32 @@ type TeamMapping struct {
 	MatchScore           pgtype.Numeric   `db:"match_score" json:"match_score"`
 	CreatedAt            pgtype.Timestamp `db:"created_at" json:"created_at"`
 	UpdatedAt            pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+}
+
+type ValueSpot struct {
+	ID                  int32            `db:"id" json:"id"`
+	EventID             pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID        pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome             string           `db:"outcome" json:"outcome"`
+	OddsValue           pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	PreviousValue       pgtype.Numeric   `db:"previous_value" json:"previous_value"`
+	WinningOdds         pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount        pgtype.Numeric   `db:"change_amount" json:"change_amount"`
+	ChangePercentage    pgtype.Numeric   `db:"change_percentage" json:"change_percentage"`
+	Multiplier          pgtype.Numeric   `db:"multiplier" json:"multiplier"`
+	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	SharpMoneyIndicator pgtype.Numeric   `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement   pgtype.Bool      `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel   pgtype.Text      `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff    pgtype.Int4      `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	BetPercentage       pgtype.Numeric   `db:"bet_percentage" json:"bet_percentage"`
+	ImpliedProbability  pgtype.Numeric   `db:"implied_probability" json:"implied_probability"`
+	EventExternalID     string           `db:"event_external_id" json:"event_external_id"`
+	EventDate           pgtype.Timestamp `db:"event_date" json:"event_date"`
+	MarketCode          string           `db:"market_code" json:"market_code"`
+	MarketName          string           `db:"market_name" json:"market_name"`
+	HomeTeamName        pgtype.Text      `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName        pgtype.Text      `db:"away_team_name" json:"away_team_name"`
+	PublicBias          int32            `db:"public_bias" json:"public_bias"`
+	AlertMessage        string           `db:"alert_message" json:"alert_message"`
 }

@@ -179,9 +179,60 @@ func (s *DistributionService) getImpliedProbability(ctx context.Context, eventID
 
 // GetValueBets finds outcomes where public betting doesn't match implied probabilities
 func (s *DistributionService) GetValueBets(ctx context.Context, minBias float64) ([]ValueBet, error) {
-	// For now, return empty slice since we simplified the query
-	// This can be implemented later with a more complex approach
-	return []ValueBet{}, nil
+	// Get outcome distributions where public betting percentage significantly differs from implied probability
+	distributions, err := s.db.GetEventBettingPatterns(ctx, pgtype.Int4{Valid: false}) // Get all events
+	if err != nil {
+		return nil, fmt.Errorf("failed to get betting patterns: %w", err)
+	}
+
+	var valueBets []ValueBet
+
+	for _, dist := range distributions {
+		// Bias is int32, convert to float for comparison
+		bias := float64(dist.Bias)
+
+		// Look for value where public overweights (positive bias above threshold)
+		if bias >= minBias {
+			oddsFloat := 0.0
+			if dist.OddsValue.Valid {
+				if oddsVal, err := dist.OddsValue.Float64Value(); err == nil && oddsVal.Valid {
+					oddsFloat = oddsVal.Float64
+				}
+			}
+
+			betPctFloat := 0.0
+			if dist.BetPercentage.Valid {
+				if betPct, err := dist.BetPercentage.Float64Value(); err == nil && betPct.Valid {
+					betPctFloat = betPct.Float64
+				}
+			}
+
+			impliedProbFloat := 0.0
+			if dist.ImpliedProbability.Valid {
+				if impliedProb, err := dist.ImpliedProbability.Float64Value(); err == nil && impliedProb.Valid {
+					impliedProbFloat = impliedProb.Float64
+				}
+			}
+
+			// Create value bet with proper field names
+			valueBet := ValueBet{
+				EventSlug:          fmt.Sprintf("market-%d-%s", dist.MarketID, dist.Outcome),
+				MatchName:          "Event Analysis",
+				EventDate:          time.Now(),
+				MarketName:         fmt.Sprintf("Market %d", dist.MarketID),
+				Outcome:            dist.Outcome,
+				CurrentOdds:        oddsFloat,
+				ImpliedProbability: fmt.Sprintf("%.2f%%", impliedProbFloat),
+				PublicBetPercent:   fmt.Sprintf("%.2f%%", betPctFloat),
+				BiasPercentage:     bias,
+				BetAssessment:      "VALUE", // Indicates this is a value bet
+			}
+
+			valueBets = append(valueBets, valueBet)
+		}
+	}
+
+	return valueBets, nil
 }
 
 // GetContrarianOpportunities finds heavily backed favorites to fade
