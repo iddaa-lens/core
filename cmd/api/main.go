@@ -1,12 +1,22 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/iddaa-lens/core/internal/config"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/server"
 )
 
 func main() {
+	// Handle health check flag for Docker health checks
+	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
+		// Simple health check - just exit with 0 if the binary can run
+		fmt.Println("OK")
+		os.Exit(0)
+	}
+
 	// Setup structured logging
 	logger.SetupLogger()
 	log := logger.New("api-service")

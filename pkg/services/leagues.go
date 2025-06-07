@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
 )
 
@@ -24,6 +24,7 @@ type LeaguesService struct {
 	apiKey       string
 	iddaaClient  *IddaaClient
 	aiTranslator *AITranslationService
+	logger       *logger.Logger
 }
 
 func NewLeaguesService(db *database.Queries, client *http.Client, apiKey string, iddaaClient *IddaaClient, openaiKey string) *LeaguesService {
@@ -38,12 +39,15 @@ func NewLeaguesService(db *database.Queries, client *http.Client, apiKey string,
 		apiKey:       apiKey,
 		iddaaClient:  iddaaClient,
 		aiTranslator: aiTranslator,
+		logger:       logger.New("leagues-service"),
 	}
 }
 
 // SyncLeaguesFromIddaa fetches and syncs leagues from Iddaa competitions endpoint
 func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
-	log.Printf("Starting Iddaa leagues sync...")
+	s.logger.Info().
+		Str("action", "sync_start").
+		Msg("Starting Iddaa leagues sync")
 
 	// Fetch competitions from Iddaa API
 	url := "https://sportsbookv2.iddaa.com/sportsbook/competitions"
@@ -62,20 +66,32 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 		return fmt.Errorf("API request failed")
 	}
 
-	log.Printf("Fetched %d competitions from Iddaa API", len(response.Data))
+	s.logger.Info().
+		Int("competition_count", len(response.Data)).
+		Str("action", "competitions_fetched").
+		Msg("Fetched competitions from Iddaa API")
 
 	// Process each competition
 	synced := 0
 	for _, competition := range response.Data {
 		err := s.syncSingleLeague(ctx, competition)
 		if err != nil {
-			log.Printf("Failed to sync league %d (%s): %v", competition.ID, competition.Name, err)
+			s.logger.Error().
+				Err(err).
+				Int("competition_id", competition.ID).
+				Str("competition_name", competition.Name).
+				Str("action", "sync_single_league_failed").
+				Msg("Failed to sync league")
 			continue
 		}
 		synced++
 	}
 
-	log.Printf("Iddaa leagues sync completed. Synced %d out of %d leagues", synced, len(response.Data))
+	s.logger.Info().
+		Int("synced_count", synced).
+		Int("total_count", len(response.Data)).
+		Str("action", "sync_complete").
+		Msg("Iddaa leagues sync completed")
 	return nil
 }
 
@@ -104,15 +120,22 @@ func (s *LeaguesService) syncSingleLeague(ctx context.Context, competition model
 		return fmt.Errorf("failed to upsert league: %w", err)
 	}
 
-	log.Printf("Synced league: %s (ID: %d, Sport: %d, Country: %s)",
-		competition.Name, competition.ID, sportID, competition.CountryID)
+	s.logger.Debug().
+		Str("action", "league_synced").
+		Str("league_name", competition.Name).
+		Int("league_id", competition.ID).
+		Int("sport_id", sportID).
+		Str("country", competition.CountryID).
+		Msg("Synced league")
 
 	return nil
 }
 
 // SyncLeaguesWithFootballAPI fetches leagues from Football API and maps them to our internal leagues
 func (s *LeaguesService) SyncLeaguesWithFootballAPI(ctx context.Context) error {
-	log.Printf("Starting Football API sync for leagues")
+	s.logger.Info().
+		Str("action", "sync_start").
+		Msg("Starting Football API sync for leagues")
 
 	// Step 1: Get all unmapped internal leagues (FOOTBALL ONLY - sport_id = 1)
 	unmappedLeagues, err := s.getUnmappedFootballLeagues(ctx)
@@ -121,11 +144,16 @@ func (s *LeaguesService) SyncLeaguesWithFootballAPI(ctx context.Context) error {
 	}
 
 	if len(unmappedLeagues) == 0 {
-		log.Printf("No unmapped football leagues found")
+		s.logger.Info().
+			Str("action", "no_unmapped_leagues").
+			Msg("No unmapped football leagues found")
 		return nil
 	}
 
-	log.Printf("Found %d unmapped football leagues to process", len(unmappedLeagues))
+	s.logger.Info().
+		Int("unmapped_count", len(unmappedLeagues)).
+		Str("action", "unmapped_leagues_found").
+		Msg("Found unmapped football leagues to process")
 
 	// Step 2: For each unmapped league, try targeted Football API searches
 	mappedCount := 0
@@ -137,25 +165,46 @@ func (s *LeaguesService) SyncLeaguesWithFootballAPI(ctx context.Context) error {
 
 		bestMatch, err := s.findBestLeagueMatchTargeted(ctx, internalLeague)
 		if err != nil {
-			log.Printf("Error searching for league %s: %v", internalLeague.Name, err)
+			s.logger.Error().
+				Err(err).
+				Str("league_name", internalLeague.Name).
+				Str("action", "search_error").
+				Msg("Error searching for league")
 			continue
 		}
 
 		if bestMatch != nil && bestMatch.Similarity >= 0.7 { // 70% confidence threshold
 			err := s.createLeagueMapping(ctx, int32(internalLeague.ID), int32(bestMatch.ID), bestMatch.Similarity, bestMatch.Method)
 			if err != nil {
-				log.Printf("Failed to create mapping for league %s -> %s: %v", internalLeague.Name, bestMatch.Name, err)
+				s.logger.Error().
+					Err(err).
+					Str("internal_league", internalLeague.Name).
+					Str("external_league", bestMatch.Name).
+					Str("action", "mapping_failed").
+					Msg("Failed to create league mapping")
 				continue
 			}
-			log.Printf("Mapped league: %s -> %s (confidence: %.2f, method: %s)",
-				internalLeague.Name, bestMatch.Name, bestMatch.Similarity, bestMatch.Method)
+			s.logger.Info().
+				Str("internal_league", internalLeague.Name).
+				Str("external_league", bestMatch.Name).
+				Float64("confidence", bestMatch.Similarity).
+				Str("method", bestMatch.Method).
+				Str("action", "league_mapped").
+				Msg("Mapped league")
 			mappedCount++
 		} else {
-			log.Printf("No suitable match found for league: %s", internalLeague.Name)
+			s.logger.Debug().
+				Str("league_name", internalLeague.Name).
+				Str("action", "no_match_found").
+				Msg("No suitable match found for league")
 		}
 	}
 
-	log.Printf("Football API sync completed. Mapped %d out of %d leagues", mappedCount, len(unmappedLeagues))
+	s.logger.Info().
+		Int("mapped_count", mappedCount).
+		Int("total_count", len(unmappedLeagues)).
+		Str("action", "sync_complete").
+		Msg("Football API sync completed")
 	return nil
 }
 
@@ -171,21 +220,36 @@ func (s *LeaguesService) getUnmappedFootballLeagues(ctx context.Context) ([]data
 
 // findBestLeagueMatchTargeted uses targeted Football API calls for more precise matching
 func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, internalLeague database.League) (*models.SearchResult, error) {
-	log.Printf("Searching for Football API match for league: %s (Country: %s)", internalLeague.Name, internalLeague.Country.String)
+	s.logger.Debug().
+		Str("league_name", internalLeague.Name).
+		Str("country", internalLeague.Country.String).
+		Str("action", "search_start").
+		Msg("Searching for Football API match for league")
 
 	// Get English translations for the Turkish league name using AI or fallback
 	englishNames, err := s.getEnglishTranslations(ctx, internalLeague)
 	if err != nil {
-		log.Printf("Translation failed for %s: %v", internalLeague.Name, err)
+		s.logger.Warn().
+			Err(err).
+			Str("league_name", internalLeague.Name).
+			Str("action", "translation_failed").
+			Msg("Translation failed, using original name")
 		englishNames = []string{internalLeague.Name} // fallback to original name
 	}
 	allSearchTerms := append([]string{internalLeague.Name}, englishNames...)
 
-	log.Printf("Search terms: %v", allSearchTerms)
+	s.logger.Debug().
+		Strs("search_terms", allSearchTerms).
+		Str("action", "search_terms_prepared").
+		Msg("Prepared search terms")
 
 	// Strategy 1: Exact name match (try both Turkish and English)
 	for _, searchTerm := range allSearchTerms {
-		log.Printf("Trying exact name match for: %s", searchTerm)
+		s.logger.Debug().
+			Str("search_term", searchTerm).
+			Str("strategy", "exact_name").
+			Str("action", "search_attempt").
+			Msg("Trying exact name match")
 		if match := s.tryExactNameMatch(ctx, searchTerm); match != nil {
 			match.Similarity = 1.0
 			match.Method = "exact_name"
@@ -195,7 +259,11 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 
 	// Strategy 2: Search by name (try both Turkish and English)
 	for _, searchTerm := range allSearchTerms {
-		log.Printf("Trying search match for: %s", searchTerm)
+		s.logger.Debug().
+			Str("search_term", searchTerm).
+			Str("strategy", "search_name").
+			Str("action", "search_attempt").
+			Msg("Trying search match")
 		if match := s.trySearchMatch(ctx, searchTerm); match != nil {
 			match.Similarity = 0.95
 			match.Method = "search_name"
@@ -213,7 +281,11 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 			if countryName == "" {
 				continue
 			}
-			log.Printf("Trying country-based search for: %s", countryName)
+			s.logger.Debug().
+				Str("country_name", countryName).
+				Str("strategy", "country_match").
+				Str("action", "search_attempt").
+				Msg("Trying country-based search")
 			if match := s.tryCountryMatch(ctx, internalLeague, countryName); match != nil {
 				match.Method = "country_match"
 				return match, nil
@@ -225,7 +297,11 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 			if countryName == "" || len(countryName) < 3 {
 				continue // Skip short country codes
 			}
-			log.Printf("Trying country search for: %s", countryName)
+			s.logger.Debug().
+				Str("country_name", countryName).
+				Str("strategy", "country_search").
+				Str("action", "search_attempt").
+				Msg("Trying country search")
 			if match := s.trySearchMatch(ctx, countryName); match != nil {
 				// Check if any of our search terms are similar to the found league
 				for _, searchTerm := range allSearchTerms {
@@ -240,7 +316,11 @@ func (s *LeaguesService) findBestLeagueMatchTargeted(ctx context.Context, intern
 	}
 
 	// Strategy 5: Fallback to similarity matching with a smaller dataset
-	log.Printf("Trying fallback similarity matching for: %s", internalLeague.Name)
+	s.logger.Debug().
+		Str("league_name", internalLeague.Name).
+		Str("strategy", "fallback").
+		Str("action", "search_attempt").
+		Msg("Trying fallback similarity matching")
 	return s.tryFallbackMatch(ctx, internalLeague)
 }
 
@@ -263,7 +343,10 @@ func (s *LeaguesService) tryExactNameMatch(ctx context.Context, leagueName strin
 func (s *LeaguesService) trySearchMatch(ctx context.Context, searchTerm string) *models.SearchResult {
 	// Football API requires search term to be at least 3 characters
 	if len(searchTerm) < 3 {
-		log.Printf("Search term '%s' too short for Football API (min 3 chars)", searchTerm)
+		s.logger.Debug().
+			Str("search_term", searchTerm).
+			Str("action", "search_term_too_short").
+			Msg("Search term too short for Football API (min 3 chars)")
 		return nil
 	}
 
@@ -292,8 +375,9 @@ func (s *LeaguesService) trySearchMatch(ctx context.Context, searchTerm string) 
 
 // tryCountryMatch attempts country-based matching
 func (s *LeaguesService) tryCountryMatch(ctx context.Context, internalLeague database.League, countryName string) *models.SearchResult {
-	// URL encode the country name
-	encodedCountry := url.QueryEscape(countryName)
+	// Sanitize country name for API compatibility, then URL encode
+	sanitizedCountry := s.sanitizeCountryNameForAPI(countryName)
+	encodedCountry := url.QueryEscape(sanitizedCountry)
 	apiURL := fmt.Sprintf("https://v3.football.api-sports.io/leagues?country=%s", encodedCountry)
 	leagues := s.fetchFromFootballAPI(ctx, apiURL)
 
@@ -328,7 +412,11 @@ func (s *LeaguesService) tryFallbackMatch(ctx context.Context, internalLeague da
 func (s *LeaguesService) fetchFromFootballAPI(ctx context.Context, url string) []models.SearchResult {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("Failed to create request for %s: %v", url, err)
+		s.logger.Error().
+			Err(err).
+			Str("url", url).
+			Str("action", "request_creation_failed").
+			Msg("Failed to create request for Football API")
 		return nil
 	}
 
@@ -337,32 +425,51 @@ func (s *LeaguesService) fetchFromFootballAPI(ctx context.Context, url string) [
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		log.Printf("Failed to make request to %s: %v", url, err)
+		s.logger.Error().
+			Err(err).
+			Str("url", url).
+			Str("action", "request_failed").
+			Msg("Failed to make request to Football API")
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Football API returned status %d for %s", resp.StatusCode, url)
+		s.logger.Error().
+			Int("status_code", resp.StatusCode).
+			Str("url", url).
+			Str("action", "api_error_status").
+			Msg("Football API returned non-OK status")
 		return nil
 	}
 
 	var apiResponse models.FootballAPILeaguesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
-		log.Printf("Failed to decode response from %s: %v", url, err)
+		s.logger.Error().
+			Err(err).
+			Str("url", url).
+			Str("action", "decode_failed").
+			Msg("Failed to decode Football API response")
 		return nil
 	}
 
 	// Check for API errors
 	if apiResponse.HasErrors() {
 		errorMessages := apiResponse.GetErrorMessages()
-		log.Printf("Football API returned errors for %s: %v", url, errorMessages)
+		s.logger.Error().
+			Strs("error_messages", errorMessages).
+			Str("url", url).
+			Str("action", "api_errors").
+			Msg("Football API returned errors")
 		return nil
 	}
 
 	// Check if we have valid results
 	if apiResponse.Results == 0 || len(apiResponse.Response) == 0 {
-		log.Printf("No results returned from Football API for %s", url)
+		s.logger.Debug().
+			Str("url", url).
+			Str("action", "no_results").
+			Msg("No results returned from Football API")
 		return nil
 	}
 
@@ -592,8 +699,8 @@ func (s *LeaguesService) translateCountryNameToEnglish(turkishCountry string) st
 		"fi":              "Finland",
 		"polonya":         "Poland",
 		"pl":              "Poland",
-		"cek cumhuriyeti": "Czech Republic",
-		"cz":              "Czech Republic",
+		"cek cumhuriyeti": "Czech-Republic",
+		"cz":              "Czech-Republic",
 		"macaristan":      "Hungary",
 		"hu":              "Hungary",
 		"romanya":         "Romania",
@@ -618,22 +725,22 @@ func (s *LeaguesService) translateCountryNameToEnglish(turkishCountry string) st
 		"cl":        "Chile",
 		"meksika":   "Mexico",
 		"mx":        "Mexico",
-		"abd":       "United States",
-		"us":        "United States",
+		"abd":       "United-States",
+		"us":        "United-States",
 		"kanada":    "Canada",
 		"ca":        "Canada",
 
 		// Asia & Oceania
 		"japonya":      "Japan",
 		"jp":           "Japan",
-		"guney kore":   "South Korea",
-		"kr":           "South Korea",
+		"guney kore":   "South-Korea",
+		"kr":           "South-Korea",
 		"cin":          "China",
 		"cn":           "China",
 		"avustralya":   "Australia",
 		"au":           "Australia",
-		"yeni zelanda": "New Zealand",
-		"nz":           "New Zealand",
+		"yeni zelanda": "New-Zealand",
+		"nz":           "New-Zealand",
 
 		// Africa
 		"misir":        "Egypt",
@@ -652,8 +759,8 @@ func (s *LeaguesService) translateCountryNameToEnglish(turkishCountry string) st
 		"cm":           "Cameroon",
 		"senegal":      "Senegal",
 		"sn":           "Senegal",
-		"guney afrika": "South Africa",
-		"za":           "South Africa",
+		"guney afrika": "South-Africa",
+		"za":           "South-Africa",
 
 		// International
 		"int":           "World",
@@ -665,6 +772,23 @@ func (s *LeaguesService) translateCountryNameToEnglish(turkishCountry string) st
 	}
 
 	return turkishCountry // Return original if no translation found
+}
+
+// sanitizeCountryNameForAPI ensures country names are compatible with Football API requirements
+// The API only accepts alphanumeric characters, underscores, and dashes
+func (s *LeaguesService) sanitizeCountryNameForAPI(countryName string) string {
+	// Replace spaces with dashes
+	sanitized := strings.ReplaceAll(countryName, " ", "-")
+
+	// Remove any other special characters that aren't alphanumeric, underscore, or dash
+	var result strings.Builder
+	for _, r := range sanitized {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
 
 // removeDuplicates removes duplicate strings from a slice
@@ -912,7 +1036,9 @@ func (s *LeaguesService) createLeagueMapping(ctx context.Context, internalID, ex
 
 // SyncTeamsWithFootballAPI syncs teams for mapped leagues
 func (s *LeaguesService) SyncTeamsWithFootballAPI(ctx context.Context) error {
-	log.Printf("Starting Football API sync for teams")
+	s.logger.Info().
+		Str("action", "sync_start").
+		Msg("Starting Football API sync for teams")
 
 	// Step 1: Get all mapped leagues
 	mappedLeagues, err := s.getMappedLeagues(ctx)
@@ -921,11 +1047,16 @@ func (s *LeaguesService) SyncTeamsWithFootballAPI(ctx context.Context) error {
 	}
 
 	if len(mappedLeagues) == 0 {
-		log.Printf("No mapped leagues found")
+		s.logger.Info().
+			Str("action", "no_mapped_leagues").
+			Msg("No mapped leagues found")
 		return nil
 	}
 
-	log.Printf("Found %d mapped leagues to process teams for", len(mappedLeagues))
+	s.logger.Info().
+		Int("mapped_leagues_count", len(mappedLeagues)).
+		Str("action", "mapped_leagues_found").
+		Msg("Found mapped leagues to process teams for")
 
 	totalTeamsMapped := 0
 
@@ -934,29 +1065,47 @@ func (s *LeaguesService) SyncTeamsWithFootballAPI(ctx context.Context) error {
 		// Get internal teams for this league
 		internalTeams, err := s.getTeamsForLeague(ctx, mapping.InternalLeagueID)
 		if err != nil {
-			log.Printf("Failed to get teams for league %d: %v", mapping.InternalLeagueID, err)
+			s.logger.Error().
+				Err(err).
+				Int32("league_id", mapping.InternalLeagueID).
+				Str("action", "get_teams_failed").
+				Msg("Failed to get teams for league")
 			continue
 		}
 
 		if len(internalTeams) == 0 {
-			log.Printf("No teams found for league %d", mapping.InternalLeagueID)
+			s.logger.Debug().
+				Int32("league_id", mapping.InternalLeagueID).
+				Str("action", "no_teams_found").
+				Msg("No teams found for league")
 			continue
 		}
 
 		// Get Football API teams for this league
 		footballAPITeams, err := s.fetchFootballAPITeams(ctx, mapping.FootballApiLeagueID)
 		if err != nil {
-			log.Printf("Failed to fetch teams from Football API for league %d: %v", mapping.FootballApiLeagueID, err)
+			s.logger.Error().
+				Err(err).
+				Int32("football_api_league_id", mapping.FootballApiLeagueID).
+				Str("action", "fetch_teams_failed").
+				Msg("Failed to fetch teams from Football API")
 			continue
 		}
 
 		// Map teams
 		teamsMapped := s.mapTeamsForLeague(ctx, internalTeams, footballAPITeams)
 		totalTeamsMapped += teamsMapped
-		log.Printf("Mapped %d teams for league %d", teamsMapped, mapping.InternalLeagueID)
+		s.logger.Info().
+			Int("teams_mapped", teamsMapped).
+			Int32("league_id", mapping.InternalLeagueID).
+			Str("action", "league_teams_mapped").
+			Msg("Mapped teams for league")
 	}
 
-	log.Printf("Football API team sync completed. Mapped %d teams total", totalTeamsMapped)
+	s.logger.Info().
+		Int("total_teams_mapped", totalTeamsMapped).
+		Str("action", "sync_complete").
+		Msg("Football API team sync completed")
 	return nil
 }
 
@@ -1005,7 +1154,10 @@ func (s *LeaguesService) fetchFootballAPITeams(ctx context.Context, leagueID int
 
 	// Check if we have valid results
 	if apiResponse.Results == 0 || len(apiResponse.Response) == 0 {
-		log.Printf("No team results returned from Football API for league %d", leagueID)
+		s.logger.Debug().
+			Int32("league_id", leagueID).
+			Str("action", "no_team_results").
+			Msg("No team results returned from Football API")
 		return nil, nil
 	}
 
@@ -1038,11 +1190,21 @@ func (s *LeaguesService) mapTeamsForLeague(ctx context.Context, internalTeams []
 		if bestMatch != nil && bestMatch.Similarity >= 0.7 { // 70% confidence threshold
 			err := s.createTeamMapping(ctx, internalTeam.ID, int32(bestMatch.ID), bestMatch.Similarity, bestMatch.Method)
 			if err != nil {
-				log.Printf("Failed to create team mapping for %s -> %s: %v", internalTeam.Name, bestMatch.Name, err)
+				s.logger.Error().
+					Err(err).
+					Str("internal_team", internalTeam.Name).
+					Str("external_team", bestMatch.Name).
+					Str("action", "team_mapping_failed").
+					Msg("Failed to create team mapping")
 				continue
 			}
-			log.Printf("Mapped team: %s -> %s (confidence: %.2f, method: %s)",
-				internalTeam.Name, bestMatch.Name, bestMatch.Similarity, bestMatch.Method)
+			s.logger.Info().
+				Str("internal_team", internalTeam.Name).
+				Str("external_team", bestMatch.Name).
+				Float64("confidence", bestMatch.Similarity).
+				Str("method", bestMatch.Method).
+				Str("action", "team_mapped").
+				Msg("Mapped team")
 			mappedCount++
 		}
 	}

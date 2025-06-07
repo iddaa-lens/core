@@ -453,6 +453,55 @@ func (q *Queries) GetTeamsNeedingEnrichment(ctx context.Context, limitCount int3
 	return items, nil
 }
 
+const listUnmappedTeams = `-- name: ListUnmappedTeams :many
+SELECT t.id, t.external_id, t.name, t.country, t.logo_url, t.is_active, t.slug, t.api_football_id, t.team_code, t.founded_year, t.is_national_team, t.venue_id, t.venue_name, t.venue_address, t.venue_city, t.venue_capacity, t.venue_surface, t.venue_image_url, t.api_enrichment_data, t.last_api_update, t.created_at, t.updated_at FROM teams t 
+LEFT JOIN team_mappings tm ON t.id = tm.internal_team_id 
+WHERE tm.id IS NULL
+`
+
+func (q *Queries) ListUnmappedTeams(ctx context.Context) ([]Team, error) {
+	rows, err := q.db.Query(ctx, listUnmappedTeams)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Team{}
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExternalID,
+			&i.Name,
+			&i.Country,
+			&i.LogoUrl,
+			&i.IsActive,
+			&i.Slug,
+			&i.ApiFootballID,
+			&i.TeamCode,
+			&i.FoundedYear,
+			&i.IsNationalTeam,
+			&i.VenueID,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCity,
+			&i.VenueCapacity,
+			&i.VenueSurface,
+			&i.VenueImageUrl,
+			&i.ApiEnrichmentData,
+			&i.LastApiUpdate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchTeams = `-- name: SearchTeams :many
 SELECT id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at FROM teams 
 WHERE name ILIKE '%' || $1 || '%' 
@@ -612,6 +661,22 @@ func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, e
 	return i, err
 }
 
+const updateTeamApiFootballID = `-- name: UpdateTeamApiFootballID :exec
+UPDATE teams 
+SET api_football_id = $1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $2
+`
+
+type UpdateTeamApiFootballIDParams struct {
+	ApiFootballID pgtype.Int4 `db:"api_football_id" json:"api_football_id"`
+	ID            int32       `db:"id" json:"id"`
+}
+
+func (q *Queries) UpdateTeamApiFootballID(ctx context.Context, arg UpdateTeamApiFootballIDParams) error {
+	_, err := q.db.Exec(ctx, updateTeamApiFootballID, arg.ApiFootballID, arg.ID)
+	return err
+}
+
 const upsertTeam = `-- name: UpsertTeam :one
 INSERT INTO teams (external_id, name, country, logo_url)
 VALUES ($1, $2, $3, $4)
@@ -659,6 +724,65 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, e
 		&i.VenueImageUrl,
 		&i.ApiEnrichmentData,
 		&i.LastApiUpdate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertTeamMapping = `-- name: UpsertTeamMapping :one
+INSERT INTO team_mappings (
+    internal_team_id, 
+    football_api_team_id, 
+    confidence, 
+    mapping_method
+) VALUES (
+    $1, 
+    $2, 
+    $3, 
+    $4
+) 
+ON CONFLICT (internal_team_id) 
+DO UPDATE SET
+    football_api_team_id = EXCLUDED.football_api_team_id,
+    confidence = EXCLUDED.confidence,
+    mapping_method = EXCLUDED.mapping_method,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, internal_team_id, football_api_team_id, confidence, mapping_method, translated_team_name, translated_country, translated_league, original_team_name, original_country, original_league, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
+`
+
+type UpsertTeamMappingParams struct {
+	InternalTeamID    int32          `db:"internal_team_id" json:"internal_team_id"`
+	FootballApiTeamID int32          `db:"football_api_team_id" json:"football_api_team_id"`
+	Confidence        pgtype.Numeric `db:"confidence" json:"confidence"`
+	MappingMethod     string         `db:"mapping_method" json:"mapping_method"`
+}
+
+func (q *Queries) UpsertTeamMapping(ctx context.Context, arg UpsertTeamMappingParams) (TeamMapping, error) {
+	row := q.db.QueryRow(ctx, upsertTeamMapping,
+		arg.InternalTeamID,
+		arg.FootballApiTeamID,
+		arg.Confidence,
+		arg.MappingMethod,
+	)
+	var i TeamMapping
+	err := row.Scan(
+		&i.ID,
+		&i.InternalTeamID,
+		&i.FootballApiTeamID,
+		&i.Confidence,
+		&i.MappingMethod,
+		&i.TranslatedTeamName,
+		&i.TranslatedCountry,
+		&i.TranslatedLeague,
+		&i.OriginalTeamName,
+		&i.OriginalCountry,
+		&i.OriginalLeague,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

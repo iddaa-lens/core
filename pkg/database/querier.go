@@ -95,6 +95,7 @@ type Querier interface {
 	ListTeamsByLeague(ctx context.Context, leagueID pgtype.Int4) ([]Team, error)
 	ListUnmappedFootballLeagues(ctx context.Context) ([]League, error)
 	ListUnmappedLeagues(ctx context.Context) ([]League, error)
+	ListUnmappedTeams(ctx context.Context) ([]Team, error)
 	RefreshContrarianBets(ctx context.Context) error
 	SearchTeams(ctx context.Context, arg SearchTeamsParams) ([]Team, error)
 	SearchTeamsByCode(ctx context.Context, arg SearchTeamsByCodeParams) ([]Team, error)
@@ -102,18 +103,22 @@ type Querier interface {
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) (Event, error)
 	UpdateEventVolume(ctx context.Context, arg UpdateEventVolumeParams) (Event, error)
 	UpdateLeague(ctx context.Context, arg UpdateLeagueParams) (League, error)
+	UpdateLeagueApiFootballID(ctx context.Context, arg UpdateLeagueApiFootballIDParams) error
 	UpdateSport(ctx context.Context, arg UpdateSportParams) (Sport, error)
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
+	UpdateTeamApiFootballID(ctx context.Context, arg UpdateTeamApiFootballIDParams) error
 	UpsertConfig(ctx context.Context, arg UpsertConfigParams) (AppConfig, error)
 	UpsertCurrentOdds(ctx context.Context, arg UpsertCurrentOddsParams) (CurrentOdd, error)
 	UpsertEvent(ctx context.Context, arg UpsertEventParams) (Event, error)
 	UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (League, error)
+	UpsertLeagueMapping(ctx context.Context, arg UpsertLeagueMappingParams) (LeagueMapping, error)
 	UpsertMarketType(ctx context.Context, arg UpsertMarketTypeParams) (MarketType, error)
 	UpsertMarketTypeByExternalID(ctx context.Context, arg UpsertMarketTypeByExternalIDParams) (MarketType, error)
 	UpsertMatchStatistics(ctx context.Context, arg UpsertMatchStatisticsParams) (MatchStatistic, error)
 	UpsertOutcomeDistribution(ctx context.Context, arg UpsertOutcomeDistributionParams) (OutcomeDistribution, error)
 	UpsertSport(ctx context.Context, arg UpsertSportParams) (Sport, error)
 	UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, error)
+	UpsertTeamMapping(ctx context.Context, arg UpsertTeamMappingParams) (TeamMapping, error)
 }
 
 var _ Querier = (*Queries)(nil)

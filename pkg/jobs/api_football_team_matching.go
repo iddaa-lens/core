@@ -44,9 +44,9 @@ func (j *APIFootballTeamMatchingJob) Name() string {
 	return "api_football_team_matching"
 }
 
-// Schedule returns the cron schedule - run daily at 4 AM (after league matching)
+// Schedule returns the cron schedule - run weekly on Tuesdays at 4 AM (after league matching)
 func (j *APIFootballTeamMatchingJob) Schedule() string {
-	return "0 4 * * *"
+	return "0 4 * * 2"
 }
 
 // Execute runs the team matching process

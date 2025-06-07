@@ -21,10 +21,19 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		jobName = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment)")
-		once    = flag.Bool("once", false, "Run job once and exit")
+		jobName     = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment)")
+		once        = flag.Bool("once", false, "Run job once and exit")
+		healthCheck = flag.Bool("health-check", false, "Perform health check and exit")
 	)
 	flag.Parse()
+
+	// Handle health check flag for Docker health checks
+	if *healthCheck {
+		// Simple health check - just exit with 0 if the binary can run
+		log := logger.New("health-check")
+		log.Info().Msg("Health check OK")
+		os.Exit(0)
+	}
 
 	// Setup structured logging
 	logger.SetupLogger()

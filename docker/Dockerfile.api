@@ -2,7 +2,7 @@
 FROM golang:1.23-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache ca-certificates git
 
 WORKDIR /app
 
@@ -13,36 +13,28 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o api ./cmd/api
+# Build the binary with enhanced optimizations
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s -buildid=" -trimpath -o api ./cmd/api
 
-# Final stage
-FROM alpine:latest
-
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata wget
-
-# Create non-root user
-RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -s /bin/sh -D appuser
-
-WORKDIR /app
+# Final stage - use distroless for minimal attack surface and size
+FROM gcr.io/distroless/static-debian12:latest
 
 # Copy binary from builder stage
-COPY --from=builder /app/api .
+COPY --from=builder /app/api /api
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Copy CA certificates for HTTPS requests
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Switch to non-root user
-USER appuser
-
-# Set timezone
+# Set timezone to UTC (distroless default)
 ENV TZ=UTC
 
 EXPOSE 8080
 
-# Health check
+# Health check using the binary itself (no wget needed in distroless)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD ["/api", "--health-check"] || exit 1
 
-CMD ["./api"]
+# Run as non-root user (distroless uses uid 65534 by default)
+USER 65534
+
+ENTRYPOINT ["/api"]

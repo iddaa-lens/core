@@ -1,7 +1,7 @@
 -- Drop all objects in reverse order
 
 -- Drop views
-DROP VIEW IF EXISTS contrarian_bets;
+DROP MATERIALIZED VIEW IF EXISTS contrarian_bets CASCADE;
 DROP VIEW IF EXISTS big_movers;
 
 -- Drop triggers

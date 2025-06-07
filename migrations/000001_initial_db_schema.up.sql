@@ -598,8 +598,8 @@ WHERE ABS(co.movement_percentage) > 20
    OR co.opening_value / NULLIF(co.odds_value, 0) > 2
 ORDER BY ABS(co.movement_percentage) DESC;
 
--- Create view for contrarian betting opportunities
-CREATE OR REPLACE VIEW contrarian_bets AS
+-- Create materialized view for contrarian betting opportunities
+CREATE MATERIALIZED VIEW contrarian_bets AS
 SELECT 
     e.slug,
     ht.name || ' vs ' || at.name as match_name,

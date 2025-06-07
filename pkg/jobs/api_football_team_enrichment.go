@@ -38,9 +38,9 @@ func (j *APIFootballTeamEnrichmentJob) Name() string {
 	return "api_football_team_enrichment"
 }
 
-// Schedule returns the cron schedule - run weekly on Sundays at 2 AM
+// Schedule returns the cron schedule - run monthly on the 1st at 3 AM
 func (j *APIFootballTeamEnrichmentJob) Schedule() string {
-	return "0 2 * * 0"
+	return "0 3 1 * *"
 }
 
 // Execute runs the team enrichment process
@@ -209,9 +209,9 @@ func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team 
 
 	// Convert values to appropriate pgtype values
 	apiFootballIDPg := pgtype.Int4{Int32: int32(apiFootballID), Valid: true}
-	
+
 	teamCodePg := pgtype.Text{String: teamData.Team.Code, Valid: teamData.Team.Code != ""}
-	
+
 	var foundedYearPg pgtype.Int4
 	if teamData.Team.Founded > 0 {
 		foundedYearPg = pgtype.Int4{Int32: int32(teamData.Team.Founded), Valid: true}
@@ -225,9 +225,9 @@ func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team 
 	}
 
 	venueNamePg := pgtype.Text{String: teamData.Venue.Name, Valid: teamData.Venue.Name != ""}
-	
+
 	venueAddressPg := pgtype.Text{String: teamData.Venue.Address, Valid: teamData.Venue.Address != ""}
-	
+
 	venueCityPg := pgtype.Text{String: teamData.Venue.City, Valid: teamData.Venue.City != ""}
 
 	var venueCapacityPg pgtype.Int4
@@ -236,7 +236,7 @@ func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team 
 	}
 
 	venueSurfacePg := pgtype.Text{String: teamData.Venue.Surface, Valid: teamData.Venue.Surface != ""}
-	
+
 	venueImagePg := pgtype.Text{String: teamData.Venue.Image, Valid: teamData.Venue.Image != ""}
 
 	// Update team with enrichment data

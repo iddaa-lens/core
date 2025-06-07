@@ -176,3 +176,28 @@ WHERE l.last_api_update IS NULL
    OR l.last_api_update < NOW() - INTERVAL '7 days'
 ORDER BY l.updated_at ASC
 LIMIT sqlc.arg(limit_count);
+
+-- name: UpdateLeagueApiFootballID :exec
+UPDATE leagues 
+SET api_football_id = sqlc.arg(api_football_id), updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: UpsertLeagueMapping :one
+INSERT INTO league_mappings (
+    internal_league_id, 
+    football_api_league_id, 
+    confidence, 
+    mapping_method
+) VALUES (
+    sqlc.arg(internal_league_id), 
+    sqlc.arg(football_api_league_id), 
+    sqlc.arg(confidence), 
+    sqlc.arg(mapping_method)
+) 
+ON CONFLICT (internal_league_id) 
+DO UPDATE SET
+    football_api_league_id = EXCLUDED.football_api_league_id,
+    confidence = EXCLUDED.confidence,
+    mapping_method = EXCLUDED.mapping_method,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;

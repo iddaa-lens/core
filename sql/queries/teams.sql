@@ -84,3 +84,33 @@ SELECT * FROM teams
 WHERE name ILIKE '%' || sqlc.arg(search_term) || '%' 
 ORDER BY name
 LIMIT sqlc.arg(limit_count);
+
+-- name: ListUnmappedTeams :many
+SELECT t.* FROM teams t 
+LEFT JOIN team_mappings tm ON t.id = tm.internal_team_id 
+WHERE tm.id IS NULL;
+
+-- name: UpdateTeamApiFootballID :exec
+UPDATE teams 
+SET api_football_id = sqlc.arg(api_football_id), updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
+
+-- name: UpsertTeamMapping :one
+INSERT INTO team_mappings (
+    internal_team_id, 
+    football_api_team_id, 
+    confidence, 
+    mapping_method
+) VALUES (
+    sqlc.arg(internal_team_id), 
+    sqlc.arg(football_api_team_id), 
+    sqlc.arg(confidence), 
+    sqlc.arg(mapping_method)
+) 
+ON CONFLICT (internal_team_id) 
+DO UPDATE SET
+    football_api_team_id = EXCLUDED.football_api_team_id,
+    confidence = EXCLUDED.confidence,
+    mapping_method = EXCLUDED.mapping_method,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;

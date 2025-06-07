@@ -983,6 +983,22 @@ func (q *Queries) UpdateLeague(ctx context.Context, arg UpdateLeagueParams) (Lea
 	return i, err
 }
 
+const updateLeagueApiFootballID = `-- name: UpdateLeagueApiFootballID :exec
+UPDATE leagues 
+SET api_football_id = $1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $2
+`
+
+type UpdateLeagueApiFootballIDParams struct {
+	ApiFootballID pgtype.Int4 `db:"api_football_id" json:"api_football_id"`
+	ID            int32       `db:"id" json:"id"`
+}
+
+func (q *Queries) UpdateLeagueApiFootballID(ctx context.Context, arg UpdateLeagueApiFootballIDParams) error {
+	_, err := q.db.Exec(ctx, updateLeagueApiFootballID, arg.ApiFootballID, arg.ID)
+	return err
+}
+
 const upsertLeague = `-- name: UpsertLeague :one
 INSERT INTO leagues (external_id, name, country, sport_id, is_active)
 VALUES ($1, $2, $3, $4, $5)
@@ -1037,6 +1053,63 @@ func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (Lea
 		&i.CurrentSeasonEnd,
 		&i.ApiEnrichmentData,
 		&i.LastApiUpdate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertLeagueMapping = `-- name: UpsertLeagueMapping :one
+INSERT INTO league_mappings (
+    internal_league_id, 
+    football_api_league_id, 
+    confidence, 
+    mapping_method
+) VALUES (
+    $1, 
+    $2, 
+    $3, 
+    $4
+) 
+ON CONFLICT (internal_league_id) 
+DO UPDATE SET
+    football_api_league_id = EXCLUDED.football_api_league_id,
+    confidence = EXCLUDED.confidence,
+    mapping_method = EXCLUDED.mapping_method,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, internal_league_id, football_api_league_id, confidence, mapping_method, translated_league_name, translated_country, original_league_name, original_country, match_factors, needs_review, ai_translation_used, normalization_applied, match_score, created_at, updated_at
+`
+
+type UpsertLeagueMappingParams struct {
+	InternalLeagueID    int32          `db:"internal_league_id" json:"internal_league_id"`
+	FootballApiLeagueID int32          `db:"football_api_league_id" json:"football_api_league_id"`
+	Confidence          pgtype.Numeric `db:"confidence" json:"confidence"`
+	MappingMethod       string         `db:"mapping_method" json:"mapping_method"`
+}
+
+func (q *Queries) UpsertLeagueMapping(ctx context.Context, arg UpsertLeagueMappingParams) (LeagueMapping, error) {
+	row := q.db.QueryRow(ctx, upsertLeagueMapping,
+		arg.InternalLeagueID,
+		arg.FootballApiLeagueID,
+		arg.Confidence,
+		arg.MappingMethod,
+	)
+	var i LeagueMapping
+	err := row.Scan(
+		&i.ID,
+		&i.InternalLeagueID,
+		&i.FootballApiLeagueID,
+		&i.Confidence,
+		&i.MappingMethod,
+		&i.TranslatedLeagueName,
+		&i.TranslatedCountry,
+		&i.OriginalLeagueName,
+		&i.OriginalCountry,
+		&i.MatchFactors,
+		&i.NeedsReview,
+		&i.AiTranslationUsed,
+		&i.NormalizationApplied,
+		&i.MatchScore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
