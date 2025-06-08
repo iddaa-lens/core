@@ -73,8 +73,8 @@ func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey st
 	// Use the market key as the code (e.g., "2_821") to match the format used in events processing
 	marketTypeCode := marketKey
 
-	// Generate slug from the Turkish name (same logic as other services)
-	slug := generateSlugFromName(config.Name)
+	// Generate slug from the Turkish name and make it unique with market key
+	slug := generateSlugFromName(config.Name, marketKey)
 
 	// Use all fields from the API with Turkish names and descriptions
 	params := database.UpsertMarketTypeParams{
@@ -112,8 +112,8 @@ func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey st
 	return nil
 }
 
-// generateSlugFromName creates a URL-friendly slug from Turkish market name
-func generateSlugFromName(name string) string {
+// generateSlugFromName creates a URL-friendly slug from Turkish market name and market key
+func generateSlugFromName(name string, marketKey string) string {
 	slug := strings.ToLower(name)
 	// Handle Turkish characters
 	slug = strings.ReplaceAll(slug, "ç", "c")
@@ -134,5 +134,7 @@ func generateSlugFromName(name string) string {
 	slug = strings.ReplaceAll(slug, "]", "")
 	slug = strings.ReplaceAll(slug, ":", "")
 	slug = strings.ReplaceAll(slug, ".", "")
-	return slug
+
+	// Ensure uniqueness by appending market key
+	return fmt.Sprintf("%s-%s", slug, strings.ReplaceAll(marketKey, "_", "-"))
 }

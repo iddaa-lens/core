@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -77,13 +79,25 @@ func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int
 	totalEvents := len(volumes)
 	for _, vol := range volumes {
 		if err := s.updateEventVolume(ctx, vol, totalEvents); err != nil {
-			// Log error but continue with other events
-			fmt.Printf("Failed to update volume for event %s: %v\n", vol.EventID, err)
+			// Skip logging for events that don't exist (common scenario)
+			if err != pgx.ErrNoRows && !isEventNotFoundError(err) {
+				// Log error but continue with other events
+				fmt.Printf("Failed to update volume for event %s: %v\n", vol.EventID, err)
+			}
 			continue
 		}
 	}
 
 	return nil
+}
+
+// isEventNotFoundError checks if the error is related to event not being found
+func isEventNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "event") && strings.Contains(errStr, "not found")
 }
 
 func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume, totalEvents int) error {
