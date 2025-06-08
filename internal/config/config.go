@@ -48,7 +48,7 @@ func Load() *Config {
 		External: ExternalAPIConfig{
 			BaseURL: getEnv("EXTERNAL_API_URL", ""),
 			APIKey:  getEnv("EXTERNAL_API_KEY", ""),
-			Timeout: getEnvAsInt("EXTERNAL_API_TIMEOUT", 30),
+			Timeout: getEnvAsInt("EXTERNAL_API_TIMEOUT", 90),
 		},
 	}
 }

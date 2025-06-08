@@ -54,7 +54,7 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 
 	for _, event := range response.Data.Events {
 		// Create a timeout context for each event to prevent one event from blocking others
-		eventCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		eventCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 
 		// Process home and away teams
 		homeTeamID, err := s.upsertTeam(eventCtx, event.HomeTeam, event.HomeTeam)
