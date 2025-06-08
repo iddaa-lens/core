@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -90,6 +91,19 @@ func (j *APIFootballLeagueMatchingJob) Execute(ctx context.Context) error {
 	// Step 2: Get all available leagues from API-Football
 	apiLeagues, err := j.fetchAllAPIFootballLeagues(ctx)
 	if err != nil {
+		// Check if it's a rate limit error
+		var rateLimitErr *apifootball.RateLimitError
+		if errors.As(err, &rateLimitErr) {
+			log.Warn().
+				Str("action", "rate_limit_hit").
+				Str("error", rateLimitErr.Error()).
+				Msg("Football API rate limit exceeded, will retry in next job run")
+
+			// For rate limit errors, exit gracefully without failing the job
+			duration := time.Since(start)
+			log.LogJobComplete("api_football_league_matching", duration, 0, 0)
+			return nil
+		}
 		return fmt.Errorf("failed to fetch API-Football leagues: %w", err)
 	}
 
@@ -119,6 +133,20 @@ func (j *APIFootballLeagueMatchingJob) Execute(ctx context.Context) error {
 		// Match with API-Football
 		match, err := j.matcher.MatchLeagueWithAPI(ctx, league, apiLeagues)
 		if err != nil {
+			// Check if it's a rate limit error during matching
+			var rateLimitErr *apifootball.RateLimitError
+			if errors.As(err, &rateLimitErr) {
+				log.Warn().
+					Str("action", "rate_limit_during_matching").
+					Str("error", rateLimitErr.Error()).
+					Int("league_id", int(league.ID)).
+					Str("league_name", league.Name).
+					Msg("Rate limit hit during league matching, stopping processing")
+
+				// Exit the loop gracefully when hitting rate limits
+				break
+			}
+
 			errorCount++
 			log.Error().
 				Err(err).

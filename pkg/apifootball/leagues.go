@@ -13,7 +13,8 @@ import (
 
 // GetLeagues fetches leagues with various filter options
 func (c *Client) GetLeagues(ctx context.Context, params map[string]string) ([]models.FootballAPILeagueData, error) {
-	response, err := c.makeRequest(ctx, "/leagues", params)
+	// Use retry logic for rate limit handling (max 3 retries)
+	response, err := c.makeRequestWithRetry(ctx, "/leagues", params, 3)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get leagues: %w", err)
 	}

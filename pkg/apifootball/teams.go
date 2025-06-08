@@ -13,7 +13,8 @@ import (
 
 // GetTeams fetches teams with various filter options
 func (c *Client) GetTeams(ctx context.Context, params map[string]string) ([]models.FootballAPITeamData, error) {
-	response, err := c.makeRequest(ctx, "/teams", params)
+	// Use retry logic for rate limit handling (max 3 retries)
+	response, err := c.makeRequestWithRetry(ctx, "/teams", params, 3)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get teams: %w", err)
 	}
