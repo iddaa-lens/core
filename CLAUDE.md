@@ -137,6 +137,14 @@ The cron service uses a robust job manager with the following features:
 - `api_football_league_enrichment` - Enrich leagues with API-Football metadata (weekly)
 - `api_football_team_enrichment` - Enrich teams with API-Football metadata (weekly)
 
+## SQLC Configuration
+
+The project uses sqlc for type-safe SQL query generation:
+- Queries are in `sql/queries/` directory
+- Schema is read from `migrations/` directory  
+- Generated Go code goes to `pkg/database/`
+- Run `make sqlc` after modifying SQL queries to regenerate code
+
 ## Important Notes
 
 - All SQL queries use `sqlc.arg(param_name)` instead of `$1, $2` etc.
@@ -148,3 +156,4 @@ The cron service uses a robust job manager with the following features:
 - Configuration data is stored as JSONB for flexible querying
 - API service has no database dependency - cron service handles all data operations
 - All jobs implement the `jobs.Job` interface with `Name()`, `Schedule()`, and `Execute(ctx)` methods
+- Logging uses zerolog with structured logging and request IDs for job tracing

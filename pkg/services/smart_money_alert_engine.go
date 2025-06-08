@@ -355,14 +355,6 @@ func (smt *SmartMoneyTracker) createAlert(ctx context.Context, oddsHistoryID int
 	})
 
 	if err != nil {
-		// If it's a constraint violation (duplicate alert), just log and continue
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "conflict") {
-			smt.logger.Debug().
-				Int64("odds_history_id", oddsHistoryID).
-				Str("alert_type", alertType).
-				Msg("Duplicate alert skipped")
-			return nil
-		}
 		return fmt.Errorf("failed to create alert: %w", err)
 	}
 

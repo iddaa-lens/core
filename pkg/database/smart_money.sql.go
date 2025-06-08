@@ -35,7 +35,16 @@ INSERT INTO movement_alerts (
     $9,
     CURRENT_TIMESTAMP + INTERVAL '24 hours'
 )
-ON CONFLICT (odds_history_id, alert_type) DO NOTHING
+ON CONFLICT (odds_history_id, alert_type) DO UPDATE SET
+    severity = EXCLUDED.severity,
+    title = EXCLUDED.title,
+    message = EXCLUDED.message,
+    change_percentage = EXCLUDED.change_percentage,
+    multiplier = EXCLUDED.multiplier,
+    confidence_score = EXCLUDED.confidence_score,
+    minutes_to_kickoff = EXCLUDED.minutes_to_kickoff,
+    expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours',
+    updated_at = CURRENT_TIMESTAMP
 RETURNING id, odds_history_id, alert_type, severity, title, message, change_percentage, multiplier, confidence_score, minutes_to_kickoff, created_at, expires_at, is_active, views, clicks
 `
 
