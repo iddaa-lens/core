@@ -17,6 +17,8 @@ CREATE INDEX IF NOT EXISTS idx_market_types_market_sub_type ON market_types(mark
 -- Additional Current odds table indexes (missing from initial migration)
 CREATE INDEX IF NOT EXISTS idx_current_odds_event_id ON current_odds(event_id);
 CREATE INDEX IF NOT EXISTS idx_current_odds_market_type_id ON current_odds(market_type_id);
+-- Composite index for GetCurrentOddsByMarket query performance
+CREATE INDEX IF NOT EXISTS idx_current_odds_event_market_composite ON current_odds(event_id, market_type_id);
 
 -- Odds history table indexes (missing from initial migration)
 CREATE INDEX IF NOT EXISTS idx_odds_history_event_id ON odds_history(event_id);

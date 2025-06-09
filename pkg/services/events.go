@@ -54,7 +54,8 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 
 	for _, event := range response.Data.Events {
 		// Create a timeout context for each event to prevent one event from blocking others
-		eventCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		// Increased timeout to allow for complex events with many markets
+		eventCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 
 		// Process home and away teams
 		homeTeamID, err := s.upsertTeam(eventCtx, event.HomeTeam, event.HomeTeam)
@@ -144,18 +145,38 @@ func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *mod
 		// Process detailed odds for this specific event (more comprehensive than bulk)
 		err = s.fetchAndProcessDetailedOdds(eventCtx, int(eventRecord.ID), event.ID)
 		if err != nil {
-			// Fallback to bulk markets if detailed fetch fails
-			s.logger.Warn().
-				Err(err).
-				Int("event_id", event.ID).
-				Str("action", "fallback_to_bulk").
-				Msg("Failed to fetch detailed odds, using bulk markets")
-			err = s.processMarkets(eventCtx, int(eventRecord.ID), event.Markets, time.Now())
-			if err != nil {
-				log.Error().
+			// Check if it's a timeout error and handle appropriately
+			if err == context.DeadlineExceeded {
+				s.logger.Warn().
 					Err(err).
 					Int("event_id", event.ID).
-					Msg("Failed to process fallback markets")
+					Str("action", "detailed_odds_timeout").
+					Msg("Detailed odds fetch timed out, using bulk markets")
+			} else {
+				s.logger.Warn().
+					Err(err).
+					Int("event_id", event.ID).
+					Str("action", "fallback_to_bulk").
+					Msg("Failed to fetch detailed odds, using bulk markets")
+			}
+
+			// Fallback to bulk markets with a fresh timeout context
+			fallbackCtx, fallbackCancel := context.WithTimeout(ctx, 30*time.Second)
+			err = s.processMarkets(fallbackCtx, int(eventRecord.ID), event.Markets, time.Now())
+			fallbackCancel()
+
+			if err != nil {
+				if err == context.DeadlineExceeded {
+					log.Warn().
+						Err(err).
+						Int("event_id", event.ID).
+						Msg("Fallback markets processing timed out, skipping event")
+				} else {
+					log.Error().
+						Err(err).
+						Int("event_id", event.ID).
+						Msg("Failed to process fallback markets")
+				}
 				processErrors = append(processErrors, fmt.Errorf("fallback markets for event %d: %w", event.ID, err))
 			}
 		}
@@ -304,12 +325,27 @@ func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets
 			}
 
 			// Get current odds to preserve opening value and detect changes
-			currentOdds, err := s.db.GetCurrentOddsByMarket(ctx, database.GetCurrentOddsByMarketParams{
+			// Use a shorter timeout for database queries to avoid blocking the entire event processing
+			queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			currentOdds, err := s.db.GetCurrentOddsByMarket(queryCtx, database.GetCurrentOddsByMarketParams{
 				EventID:      pgtype.Int4{Int32: int32(eventID), Valid: true},
 				MarketTypeID: pgtype.Int4{Int32: marketType.ID, Valid: true},
 			})
 			if err != nil && err.Error() != "no rows in result set" {
-				return fmt.Errorf("failed to get current odds: %w", err)
+				// If it's a timeout error, log but continue without preserving opening values
+				if err == context.DeadlineExceeded {
+					s.logger.Warn().
+						Err(err).
+						Int("event_id", eventID).
+						Int32("market_type_id", marketType.ID).
+						Str("action", "db_query_timeout").
+						Msg("Database query timeout, continuing without preserving opening values")
+					currentOdds = []database.GetCurrentOddsByMarketRow{} // Empty slice to continue processing
+				} else {
+					return fmt.Errorf("failed to get current odds: %w", err)
+				}
 			}
 
 			var openingValue pgtype.Numeric
