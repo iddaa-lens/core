@@ -12,17 +12,29 @@ import (
 )
 
 const countEventsFiltered = `-- name: CountEventsFiltered :one
-SELECT COUNT(*)
-FROM events e
-JOIN teams ht ON e.home_team_id = ht.id
-JOIN teams at ON e.away_team_id = at.id
-JOIN leagues l ON e.league_id = l.id
-JOIN sports s ON e.sport_id = s.id
-WHERE e.event_date >= $1
+SELECT
+  COUNT(*)
+FROM
+  events e
+  JOIN teams ht ON e.home_team_id = ht.id
+  JOIN teams at ON e.away_team_id = at.id
+  JOIN leagues l ON e.league_id = l.id
+  JOIN sports s ON e.sport_id = s.id
+WHERE
+  e.event_date >= $1
   AND e.event_date <= $2
-  AND ($3 = '' OR s.code = $3)
-  AND ($4 = '' OR l.name ILIKE '%' || $4 || '%')
-  AND ($5 = '' OR e.status = $5)
+  AND (
+    $3 = ''
+    OR s.code = $3
+  )
+  AND (
+    $4 = ''
+    OR l.name ILIKE '%' || $4 || '%'
+  )
+  AND (
+    $5 = ''
+    OR e.status = $5
+  )
 `
 
 type CountEventsFilteredParams struct {
@@ -47,9 +59,24 @@ func (q *Queries) CountEventsFiltered(ctx context.Context, arg CountEventsFilter
 }
 
 const createEvent = `-- name: CreateEvent :one
-INSERT INTO events (external_id, league_id, home_team_id, away_team_id, event_date, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+INSERT INTO
+  events (
+    external_id,
+    league_id,
+    home_team_id,
+    away_team_id,
+    event_date,
+    status
+  )
+VALUES
+  (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+  ) RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type CreateEventParams struct {
@@ -103,14 +130,25 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 }
 
 const getActiveEventsForDetailedSync = `-- name: GetActiveEventsForDetailedSync :many
-SELECT id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at FROM events 
-WHERE (status = 'live' OR status = 'scheduled') 
+SELECT
+  id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+FROM
+  events
+WHERE
+  (
+    status = 'live'
+    OR status = 'scheduled'
+  )
   AND event_date >= NOW() - INTERVAL '2 hours'
   AND event_date <= NOW() + INTERVAL '24 hours'
-ORDER BY 
-  CASE WHEN status = 'live' THEN 1 ELSE 2 END,
+ORDER BY
+  CASE
+    WHEN status = 'live' THEN 1
+    ELSE 2
+  END,
   event_date ASC
-LIMIT $1
+LIMIT
+  $1
 `
 
 func (q *Queries) GetActiveEventsForDetailedSync(ctx context.Context, limitCount int32) ([]Event, error) {
@@ -161,15 +199,18 @@ func (q *Queries) GetActiveEventsForDetailedSync(ctx context.Context, limitCount
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, 
-       ht.name as home_team_name,
-       at.name as away_team_name,
-       l.name as league_name
-FROM events e
-JOIN teams ht ON e.home_team_id = ht.id
-JOIN teams at ON e.away_team_id = at.id
-JOIN leagues l ON e.league_id = l.id
-WHERE e.id = $1
+SELECT
+  e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+  ht.name as home_team_name,
+  at.name as away_team_name,
+  l.name as league_name
+FROM
+  events e
+  JOIN teams ht ON e.home_team_id = ht.id
+  JOIN teams at ON e.away_team_id = at.id
+  JOIN leagues l ON e.league_id = l.id
+WHERE
+  e.id = $1
 `
 
 type GetEventRow struct {
@@ -242,15 +283,18 @@ func (q *Queries) GetEvent(ctx context.Context, id int32) (GetEventRow, error) {
 }
 
 const getEventByExternalID = `-- name: GetEventByExternalID :one
-SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, 
-       ht.name as home_team_name,
-       at.name as away_team_name,
-       l.name as league_name
-FROM events e
-JOIN teams ht ON e.home_team_id = ht.id
-JOIN teams at ON e.away_team_id = at.id
-LEFT JOIN leagues l ON e.league_id = l.id
-WHERE e.external_id = $1
+SELECT
+  e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+  ht.name as home_team_name,
+  at.name as away_team_name,
+  l.name as league_name
+FROM
+  events e
+  JOIN teams ht ON e.home_team_id = ht.id
+  JOIN teams at ON e.away_team_id = at.id
+  LEFT JOIN leagues l ON e.league_id = l.id
+WHERE
+  e.external_id = $1
 `
 
 type GetEventByExternalIDRow struct {
@@ -323,7 +367,12 @@ func (q *Queries) GetEventByExternalID(ctx context.Context, externalID string) (
 }
 
 const getEventByExternalIDSimple = `-- name: GetEventByExternalIDSimple :one
-SELECT id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at FROM events WHERE external_id = $1
+SELECT
+  id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+FROM
+  events
+WHERE
+  external_id = $1
 `
 
 func (q *Queries) GetEventByExternalIDSimple(ctx context.Context, externalID string) (Event, error) {
@@ -361,7 +410,12 @@ func (q *Queries) GetEventByExternalIDSimple(ctx context.Context, externalID str
 }
 
 const getEventByID = `-- name: GetEventByID :one
-SELECT id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at FROM events WHERE id = $1
+SELECT
+  id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+FROM
+  events
+WHERE
+  id = $1
 `
 
 func (q *Queries) GetEventByID(ctx context.Context, id int32) (Event, error) {
@@ -399,13 +453,22 @@ func (q *Queries) GetEventByID(ctx context.Context, id int32) (Event, error) {
 }
 
 const getEventsByTeam = `-- name: GetEventsByTeam :many
-SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, l.name as league_name
-FROM events e
-LEFT JOIN leagues l ON e.league_id = l.id
-WHERE (e.home_team_id = $1 OR e.away_team_id = $1)
+SELECT
+  e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+  l.name as league_name
+FROM
+  events e
+  LEFT JOIN leagues l ON e.league_id = l.id
+WHERE
+  (
+    e.home_team_id = $1
+    OR e.away_team_id = $1
+  )
   AND e.event_date >= $2
-ORDER BY e.event_date DESC
-LIMIT $3
+ORDER BY
+  e.event_date DESC
+LIMIT
+  $3
 `
 
 type GetEventsByTeamParams struct {
@@ -493,16 +556,20 @@ func (q *Queries) GetEventsByTeam(ctx context.Context, arg GetEventsByTeamParams
 }
 
 const listEventsByDate = `-- name: ListEventsByDate :many
-SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at, 
-       ht.name as home_team_name,
-       at.name as away_team_name,
-       l.name as league_name
-FROM events e
-JOIN teams ht ON e.home_team_id = ht.id
-JOIN teams at ON e.away_team_id = at.id
-JOIN leagues l ON e.league_id = l.id
-WHERE DATE(e.event_date) = DATE($1)
-ORDER BY e.event_date
+SELECT
+  e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
+  ht.name as home_team_name,
+  at.name as away_team_name,
+  l.name as league_name
+FROM
+  events e
+  JOIN teams ht ON e.home_team_id = ht.id
+  JOIN teams at ON e.away_team_id = at.id
+  JOIN leagues l ON e.league_id = l.id
+WHERE
+  DATE(e.event_date) = DATE($1)
+ORDER BY
+  e.event_date
 `
 
 type ListEventsByDateRow struct {
@@ -588,28 +655,66 @@ func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) (
 }
 
 const listEventsFiltered = `-- name: ListEventsFiltered :many
-SELECT e.id, e.external_id, e.league_id, e.home_team_id, e.away_team_id, e.slug, e.event_date, e.status, e.home_score, e.away_score, e.is_live, e.minute_of_match, e.half, e.betting_volume_percentage, e.volume_rank, e.volume_updated_at, e.bulletin_id, e.version, e.sport_id, e.bet_program, e.mbc, e.has_king_odd, e.odds_count, e.has_combine, e.created_at, e.updated_at,
-       ht.name as home_team_name,
-       ht.country as home_team_country,
-       at.name as away_team_name,
-       at.country as away_team_country,
-       l.name as league_name,
-       l.country as league_country,
-       s.name as sport_name,
-       s.code as sport_code
-FROM events e
-JOIN teams ht ON e.home_team_id = ht.id
-JOIN teams at ON e.away_team_id = at.id
-JOIN leagues l ON e.league_id = l.id
-JOIN sports s ON e.sport_id = s.id
-WHERE e.event_date >= $1
+SELECT
+  e.id,
+  e.external_id,
+  e.league_id,
+  e.home_team_id,
+  e.away_team_id,
+  e.slug,
+  e.event_date,
+  e.status,
+  e.home_score,
+  e.away_score,
+  e.is_live,
+  e.minute_of_match,
+  e.half,
+  e.betting_volume_percentage,
+  e.volume_rank,
+  e.volume_updated_at,
+  e.bulletin_id,
+  e.version,
+  e.sport_id,
+  e.bet_program,
+  e.mbc,
+  e.has_king_odd,
+  e.odds_count,
+  e.has_combine,
+  e.created_at,
+  e.updated_at,
+  ht.name as home_team_name,
+  ht.country as home_team_country,
+  at.name as away_team_name,
+  at.country as away_team_country,
+  l.name as league_name,
+  l.country as league_country,
+  s.name as sport_name,
+  s.code as sport_code
+FROM
+  events e
+  JOIN teams ht ON e.home_team_id = ht.id
+  JOIN teams at ON e.away_team_id = at.id
+  JOIN leagues l ON e.league_id = l.id
+  JOIN sports s ON e.sport_id = s.id
+WHERE
+  e.event_date >= $1
   AND e.event_date <= $2
-  AND ($3 = '' OR s.code = $3)
-  AND ($4 = '' OR l.name ILIKE '%' || $4 || '%')
-  AND ($5 = '' OR e.status = $5)
-ORDER BY e.event_date ASC
-LIMIT $7
-OFFSET $6
+  AND (
+    $3 = ''
+    OR s.code = $3
+  )
+  AND (
+    $4 = ''
+    OR l.name ILIKE '%' || $4 || '%'
+  )
+  AND (
+    $5 = ''
+    OR e.status = $5
+  )
+ORDER BY
+  e.event_date ASC
+LIMIT
+  $7 OFFSET $6
 `
 
 type ListEventsFilteredParams struct {
@@ -723,10 +828,15 @@ func (q *Queries) ListEventsFiltered(ctx context.Context, arg ListEventsFiltered
 }
 
 const updateEventStatus = `-- name: UpdateEventStatus :one
-UPDATE events 
-SET status = $1, home_score = $2, away_score = $3, updated_at = CURRENT_TIMESTAMP
-WHERE id = $4
-RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+UPDATE
+  events
+SET
+  status = $1,
+  home_score = $2,
+  away_score = $3,
+  updated_at = CURRENT_TIMESTAMP
+WHERE
+  id = $4 RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type UpdateEventStatusParams struct {
@@ -776,31 +886,65 @@ func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusPa
 }
 
 const upsertEvent = `-- name: UpsertEvent :one
-INSERT INTO events (external_id, league_id, home_team_id, away_team_id, event_date, status, home_score, away_score, 
-                   bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, is_live)
-VALUES ($1, $2, $3, $4, $5, 
-        $6, $7, $8, $9, $10, 
-        $11, $12, $13, $14, $15, 
-        $16, $17)
-ON CONFLICT (external_id) DO UPDATE SET
-    league_id = EXCLUDED.league_id,
-    home_team_id = EXCLUDED.home_team_id,
-    away_team_id = EXCLUDED.away_team_id,
-    event_date = EXCLUDED.event_date,
-    status = EXCLUDED.status,
-    home_score = EXCLUDED.home_score,
-    away_score = EXCLUDED.away_score,
-    bulletin_id = EXCLUDED.bulletin_id,
-    version = EXCLUDED.version,
-    sport_id = EXCLUDED.sport_id,
-    bet_program = EXCLUDED.bet_program,
-    mbc = EXCLUDED.mbc,
-    has_king_odd = EXCLUDED.has_king_odd,
-    odds_count = EXCLUDED.odds_count,
-    has_combine = EXCLUDED.has_combine,
-    is_live = EXCLUDED.is_live,
-    updated_at = CURRENT_TIMESTAMP
-RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+INSERT INTO
+  events (
+    external_id,
+    league_id,
+    home_team_id,
+    away_team_id,
+    event_date,
+    status,
+    home_score,
+    away_score,
+    bulletin_id,
+    version,
+    sport_id,
+    bet_program,
+    mbc,
+    has_king_odd,
+    odds_count,
+    has_combine,
+    is_live
+  )
+VALUES
+  (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17
+  ) ON CONFLICT (external_id) DO
+UPDATE
+SET
+  league_id = EXCLUDED.league_id,
+  home_team_id = EXCLUDED.home_team_id,
+  away_team_id = EXCLUDED.away_team_id,
+  event_date = EXCLUDED.event_date,
+  status = EXCLUDED.status,
+  home_score = EXCLUDED.home_score,
+  away_score = EXCLUDED.away_score,
+  bulletin_id = EXCLUDED.bulletin_id,
+  version = EXCLUDED.version,
+  sport_id = EXCLUDED.sport_id,
+  bet_program = EXCLUDED.bet_program,
+  mbc = EXCLUDED.mbc,
+  has_king_odd = EXCLUDED.has_king_odd,
+  odds_count = EXCLUDED.odds_count,
+  has_combine = EXCLUDED.has_combine,
+  is_live = EXCLUDED.is_live,
+  updated_at = CURRENT_TIMESTAMP RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type UpsertEventParams struct {

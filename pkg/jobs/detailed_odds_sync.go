@@ -121,5 +121,5 @@ func (j *DetailedOddsSyncJob) syncEventDetails(ctx context.Context, eventID int,
 	}
 
 	// Process the detailed markets and odds using the internal event ID
-	return j.events.ProcessDetailedMarkets(eventCtx, eventID, eventResponse.Data.Markets, time.Now())
+	return j.events.ProcessDetailedMarkets(eventCtx, eventID, eventResponse.Data.Markets)
 }

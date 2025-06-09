@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"time"
 
 	"github.com/iddaa-lens/core/pkg/models"
 )
@@ -21,5 +20,5 @@ type IddaaClientInterface interface {
 
 // EventsServiceInterface defines the interface for events service
 type EventsServiceInterface interface {
-	ProcessDetailedMarkets(ctx context.Context, eventID int, markets []models.IddaaDetailedMarket, timestamp time.Time) error
+	ProcessDetailedMarkets(ctx context.Context, eventID int, markets []models.IddaaDetailedMarket) error
 }

@@ -155,7 +155,7 @@ func (m *TeamLeagueMatcher) findTeamCandidates(translations *TeamTranslations, a
 				Name:       apiTeam.Name,
 				Country:    apiTeam.Country,
 				Confidence: confidence,
-				Method:     m.determineTeamMatchMethod(translations, apiTeam, confidence),
+				Method:     m.determineTeamMatchMethod(translations, apiTeam),
 			})
 			seen[apiTeam.ID] = true
 		}
@@ -189,7 +189,7 @@ func (m *TeamLeagueMatcher) findLeagueCandidates(translations *LeagueTranslation
 				Name:       apiLeague.Name,
 				Country:    apiLeague.Country,
 				Confidence: confidence,
-				Method:     m.determineLeagueMatchMethod(translations, apiLeague, confidence),
+				Method:     m.determineLeagueMatchMethod(translations, apiLeague),
 			})
 			seen[apiLeague.ID] = true
 		}
@@ -319,7 +319,7 @@ func (m *TeamLeagueMatcher) calculateKeywordSimilarity(keywords1, keywords2 []st
 }
 
 // determineTeamMatchMethod determines which method produced the best team match
-func (m *TeamLeagueMatcher) determineTeamMatchMethod(translations *TeamTranslations, apiTeam models.SearchResult, confidence float64) string {
+func (m *TeamLeagueMatcher) determineTeamMatchMethod(translations *TeamTranslations, apiTeam models.SearchResult) string {
 	// Exact match
 	if m.normalizer.CompareNormalized(translations.TeamName, apiTeam.Name) >= 0.95 {
 		return "exact_name"
@@ -351,7 +351,7 @@ func (m *TeamLeagueMatcher) determineTeamMatchMethod(translations *TeamTranslati
 }
 
 // determineLeagueMatchMethod determines which method produced the best league match
-func (m *TeamLeagueMatcher) determineLeagueMatchMethod(translations *LeagueTranslations, apiLeague models.SearchResult, confidence float64) string {
+func (m *TeamLeagueMatcher) determineLeagueMatchMethod(translations *LeagueTranslations, apiLeague models.SearchResult) string {
 	// Exact match
 	if m.normalizer.CompareNormalized(translations.LeagueName, apiLeague.Name) >= 0.95 {
 		return "exact_name"

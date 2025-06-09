@@ -85,7 +85,7 @@ func (s *OutcomeReaderService) GetEventDistribution(ctx context.Context, eventID
 		outcome := OutcomeMapping{
 			MarketID:    dist.MarketID,
 			Outcome:     dist.Outcome,
-			Description: s.interpretOutcome(dist.MarketID, dist.Outcome),
+			Description: s.interpretOutcome(dist.Outcome),
 			BetPercent:  betPct.Float64,
 			ImpliedProb: impliedPct,
 		}
@@ -126,7 +126,7 @@ func (s *OutcomeReaderService) GetEventDistribution(ctx context.Context, eventID
 }
 
 // interpretOutcome converts outcome numbers to readable descriptions
-func (s *OutcomeReaderService) interpretOutcome(marketID int32, outcome string) string {
+func (s *OutcomeReaderService) interpretOutcome(outcome string) string {
 	// Convert outcome to number for pattern matching
 	outcomeNum, err := strconv.Atoi(outcome)
 	if err != nil {
@@ -246,7 +246,7 @@ func (s *OutcomeReaderService) GetTopDistributions(ctx context.Context, limit in
 		outcome := OutcomeMapping{
 			MarketID:    dist.MarketID,
 			Outcome:     dist.Outcome,
-			Description: s.interpretOutcome(dist.MarketID, dist.Outcome),
+			Description: s.interpretOutcome(dist.Outcome),
 			BetPercent:  betPct.Float64,
 			ImpliedProb: impliedPct,
 		}
@@ -282,7 +282,7 @@ func (s *OutcomeReaderService) GetDistributionHistory(ctx context.Context, event
 			CurrentPercentage:  currentPct.Float64,
 			PreviousPercentage: previousPct,
 			Change:             currentPct.Float64 - previousPct,
-			Description:        s.interpretOutcome(marketID, outcome),
+			Description:        s.interpretOutcome(outcome),
 		}
 		changes = append(changes, change)
 	}
