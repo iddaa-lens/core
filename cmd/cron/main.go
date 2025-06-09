@@ -21,9 +21,10 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		jobName     = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor)")
-		once        = flag.Bool("once", false, "Run job once and exit")
-		healthCheck = flag.Bool("health-check", false, "Perform health check and exit")
+		jobName           = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor)")
+		once              = flag.Bool("once", false, "Run job once and exit")
+		healthCheck       = flag.Bool("health-check", false, "Perform health check and exit")
+		useProductionMode = flag.Bool("production-mode", false, "Use production job manager with distributed locking")
 	)
 	flag.Parse()
 
@@ -79,8 +80,24 @@ func main() {
 	statisticsService := services.NewStatisticsService(queries, iddaaClient)
 	smartMoneyTracker := services.NewSmartMoneyTracker(queries)
 
-	// Create job manager
-	jobManager := jobs.NewJobManager()
+	// Create job manager (production or standard based on flag)
+	var jobManager jobs.JobManager
+	if *useProductionMode {
+		log.Info().
+			Str("action", "production_mode_enabled").
+			Msg("Using production job manager with distributed locking")
+
+		// Create production job manager with distributed locking
+		jobManager = jobs.NewProductionJobManager(db, &jobs.ProductionJobManagerConfig{
+			EnableLocking: true,
+			DefaultConfig: jobs.DefaultProductionJobConfig(),
+		})
+	} else {
+		log.Info().
+			Str("action", "standard_mode").
+			Msg("Using standard job manager (no distributed locking)")
+		jobManager = jobs.NewJobManager()
+	}
 
 	// Register jobs
 	configJob := jobs.NewConfigSyncJob(configService, "WEB")
@@ -175,100 +192,48 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
-		switch *jobName {
-		case "config":
-			log.Println("Running config sync job once...")
-			if err := configJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute config job: %v", err)
-			}
-			log.Println("Config sync completed successfully")
-		case "sports":
-			log.Println("Running sports sync job once...")
-			if err := sportsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute sports job: %v", err)
-			}
-			log.Println("Sports sync completed successfully")
-		case "events":
-			log.Println("Running events sync job once...")
-			if err := eventsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute events job: %v", err)
-			}
-			log.Println("Events sync completed successfully")
-		case "volume":
-			log.Println("Running volume sync job once...")
-			if err := volumeJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute volume job: %v", err)
-			}
-			log.Println("Volume sync completed successfully")
-		case "distribution":
-			log.Println("Running distribution sync job once...")
-			if err := distributionJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute distribution job: %v", err)
-			}
-			log.Println("Distribution sync completed successfully")
-		case "analytics":
-			log.Println("Running analytics refresh job once...")
-			if err := analyticsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute analytics job: %v", err)
-			}
-			log.Println("Analytics refresh completed successfully")
-		case "market_config":
-			log.Println("Running market config sync job once...")
-			if err := marketConfigJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute market config job: %v", err)
-			}
-			log.Println("Market config sync completed successfully")
-		case "statistics":
-			log.Println("Running statistics sync job once...")
-			if err := statisticsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute statistics job: %v", err)
-			}
-			log.Println("Statistics sync completed successfully")
-		case "leagues":
-			log.Println("Running leagues sync job once...")
-			if err := leaguesJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute leagues job: %v", err)
-			}
-			log.Println("Leagues sync completed successfully")
-		case "detailed_odds":
-			log.Println("Running detailed odds sync job once...")
-			if err := detailedOddsJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute detailed odds job: %v", err)
-			}
-			log.Println("Detailed odds sync completed successfully")
-		case "api_football_league_matching":
-			log.Println("Running API-Football league matching job once...")
-			if err := apiFootballLeagueMatchingJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute API-Football league matching job: %v", err)
-			}
-			log.Println("API-Football league matching completed successfully")
-		case "api_football_team_matching":
-			log.Println("Running API-Football team matching job once...")
-			if err := apiFootballTeamMatchingJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute API-Football team matching job: %v", err)
-			}
-			log.Println("API-Football team matching completed successfully")
-		case "api_football_league_enrichment":
-			log.Println("Running API-Football league enrichment job once...")
-			if err := apiFootballLeagueEnrichmentJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute API-Football league enrichment job: %v", err)
-			}
-			log.Println("API-Football league enrichment completed successfully")
-		case "api_football_team_enrichment":
-			log.Println("Running API-Football team enrichment job once...")
-			if err := apiFootballTeamEnrichmentJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute API-Football team enrichment job: %v", err)
-			}
-			log.Println("API-Football team enrichment completed successfully")
-		case "smart_money_processor":
-			log.Println("Running Smart Money Processor job once...")
-			if err := smartMoneyProcessorJob.Execute(ctx); err != nil {
-				log.Fatalf("Failed to execute Smart Money Processor job: %v", err)
-			}
-			log.Println("Smart Money Processor completed successfully")
-		default:
-			log.Fatalf("Unknown job: %s. Available jobs: config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor", *jobName)
+		// Find the job by name from registered jobs
+		var targetJob jobs.Job
+		jobNameMapping := map[string]string{
+			"config":                         "Config Sync (WEB)",
+			"sports":                         "sports_sync",
+			"events":                         "events_sync",
+			"volume":                         "volume_sync",
+			"distribution":                   "distribution_sync",
+			"analytics":                      "analytics_refresh",
+			"market_config":                  "market_config_sync",
+			"statistics":                     "statistics_sync",
+			"leagues":                        "leagues_sync",
+			"detailed_odds":                  "detailed_odds",
+			"api_football_league_matching":   "api_football_league_matching",
+			"api_football_team_matching":     "api_football_team_matching",
+			"api_football_league_enrichment": "api_football_league_enrichment",
+			"api_football_team_enrichment":   "api_football_team_enrichment",
+			"smart_money_processor":          "smart_money_processor",
 		}
+
+		actualJobName, exists := jobNameMapping[*jobName]
+		if !exists {
+			log.Fatalf("Unknown job name: %s", *jobName)
+		}
+
+		// Find the registered job
+		for _, job := range jobManager.GetJobs() {
+			if job.Name() == actualJobName {
+				targetJob = job
+				break
+			}
+		}
+
+		if targetJob == nil {
+			log.Fatalf("Job not found: %s (mapped to %s)", *jobName, actualJobName)
+		}
+
+		log.Printf("Running %s job once...", *jobName)
+		if err := targetJob.Execute(ctx); err != nil {
+			log.Fatalf("Failed to execute %s job: %v", *jobName, err)
+		}
+		log.Printf("%s completed successfully", *jobName)
 		return
 	}
 
