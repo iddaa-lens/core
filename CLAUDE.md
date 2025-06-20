@@ -4,156 +4,207 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository hosts the backend services for iddaa-related features. Iddaa is the betting platform of Turkey. The project consists of two main services:
+This is the core backend service for IddaaLens, a comprehensive sports betting analysis platform focused on the Turkish Iddaa betting system. The service provides:
 
-1. **REST API** (`cmd/api`) - Simple HTTP service with health check endpoint
-2. **Cron Jobs** (`cmd/cron`) - Fetches data from iddaa API, stores in database, and syncs with Football API
+1. **REST API** (`cmd/api`) - HTTP service for data access and analysis
+2. **Cron Jobs** (`cmd/cron`) - Automated data synchronization from Iddaa API and API-Football
 
-## Technology Stack
+## Architecture
 
-- **Language**: Go 1.23+
-- **Database**: PostgreSQL with sqlc for type-safe queries
-- **Web Framework**: Standard library net/http (API), Gin framework available
-- **External APIs**: Iddaa sportsbook API, Football API for team/league mapping
-- **Database Migrations**: golang-migrate
-- **Cron Jobs**: robfig/cron
+The codebase follows clean architecture principles:
+
+- `/cmd` - Service entry points (api, cron)
+- `/pkg` - Core business logic organized by domain
+  - `database/` - SQLC-generated type-safe database code
+  - `handlers/` - HTTP request handlers with middleware
+  - `services/` - Business logic and external API integrations
+  - `jobs/` - Cron job implementations with distributed locking
+  - `models/` - Domain models and data structures
+- `/sql` - SQL query definitions for SQLC
+- `/migrations` - Database migration files
+- `/deploy` - Kubernetes deployment configurations
 
 ## Development Commands
 
-The project uses modular Makefiles organized in `scripts/make/` directory:
-
 ```bash
-# Build commands
-make build           # Build all services  
-make build-cron      # Build cron service only
-make build-api       # Build API service only
-make clean           # Clean build artifacts
-
-# Development commands
-make deps            # Download and organize dependencies
-make sqlc            # Generate sqlc code (run after modifying SQL queries)
-make run-cron        # Run cron jobs service
-make run-api         # Run API service locally
-
-# Testing & Quality
-make test            # Run all tests
-make test-coverage   # Run tests with coverage report
-make test-race       # Run tests with race detection
-make lint            # Run linting tools (golangci-lint, go vet, go fmt)
-
-# Database commands  
+# Database setup (required first)
 export DATABASE_URL="postgresql://iddaa:iddaa123@localhost:5433/iddaa_core?sslmode=disable"
-make migrate         # Run database migrations up
-make migrate-down    # Run one migration down
+make migrate         # Run database migrations
+
+# Build and run
+make deps            # Install dependencies
+make build           # Build all services
+make run-api         # Run API service (port 8080)
+make run-cron        # Run cron jobs service
+make docker-dev      # Start full dev environment
+
+# Database operations
+make sqlc            # Regenerate database code after SQL changes
+make migrate-down    # Rollback one migration
 make migrate-status  # Check migration status
-make db-create       # Create database
-make db-drop         # Drop database
 
-# Docker commands
-make build-images ORG=iddaa-backend TAG=latest    # Build all Docker images
-make push-images ORG=iddaa-backend TAG=latest     # Push all Docker images
-make build-api-image                              # Build API image only
-make build-cron-image                             # Build cron image only
-make docker-up       # Start all services with Docker Compose
-make docker-down     # Stop all services
-make docker-dev      # Start development environment
+# Testing and quality
+make test            # Run all tests
+make test-coverage   # Generate coverage report
+make lint            # Run linters (golangci-lint, go vet, go fmt)
 
-# Single Job Testing
-go run ./cmd/cron --job=config --once           # Run config sync once
-go run ./cmd/cron --job=sports --once           # Run sports sync once  
-go run ./cmd/cron --job=events --once           # Run events sync once
-go run ./cmd/cron --job=leagues --once          # Run leagues sync once
-go run ./cmd/cron --job=detailed_odds --once    # Run detailed odds sync once
+# Single job testing
+go run ./cmd/cron --job=events --once
+go run ./cmd/cron --job=smart_money_processor --once
+go run ./cmd/cron --job=api_football_team_matching --once
 
-# Help
-make help           # Show all available commands
+# Docker operations
+make build-images ORG=iddaalens TAG=latest
+make push-images ORG=iddaalens TAG=latest
 ```
-
-## Database Schema
-
-- `sports` - Sport types (football, basketball, etc.)
-- `leagues` - Leagues and tournaments with API-Football enrichment fields (logo_url, country_code, etc.)
-- `teams` - Team information with API-Football enrichment (team_code, founded_year, venue details, etc.)
-- `events` - Matches/games
-- `odds` - Historical odds data
-- `predictions` - AI model predictions
-- `market_types` - Betting market types (1X2, Over/Under, etc.)
-- `league_mappings` - Maps internal leagues to Football API leagues with translation tracking
-- `team_mappings` - Maps internal teams to Football API teams with confidence scoring
-
-## External API Integration
-
-The system fetches data from multiple APIs:
-- **Iddaa API**: `GET /sportsbook/competitions`, events, odds
-- **API-Football**: Comprehensive league and team data for mapping and enrichment
-  - `/leagues` - Get leagues by various criteria (country, season, type, etc.)
-  - `/teams` - Get teams by ID, name, league, country, venue, etc.
-  - Rate-limited client with proper error handling and retry logic
-- **Configuration**: `GET https://contentv2.iddaa.com/appconfig?platform=WEB`
-- **OpenAI API**: Turkish to English translation for team/league names
 
 ## API Endpoints
 
-- `GET /health` - Health check endpoint returning JSON status
-- `GET /` - Simple root endpoint returning text response
+### Core Endpoints
+
+- `GET /health` - Health check (no database dependency)
+- `GET /api/v1/events` - List events with filters (sport_id, league_id, date range)
+- `GET /api/v1/events/upcoming` - Next 7 days of matches
+- `GET /api/v1/events/daily` - Today's matches
+- `GET /api/v1/events/live` - Currently live matches
+- `GET /api/v1/events/:id` - Single event details
+- `GET /api/v1/events/:id/odds` - Odds history for an event
+
+### Odds & Analysis
+
+- `GET /api/v1/odds` - List odds with filters
+- `GET /api/v1/odds/big-movers` - Significant odds movements
+- `GET /api/v1/smart-money/alerts` - Smart money detection alerts
+- `GET /api/v1/smart-money/summary` - Overview of smart money activity
+
+### Reference Data
+
+- `GET /api/v1/teams` - List teams (optional league_id filter)
+- `GET /api/v1/teams/:id` - Single team details
+- `GET /api/v1/leagues` - List leagues (optional sport_id filter)
+- `GET /api/v1/leagues/:id` - Single league details
+
+## Database Operations
+
+The project uses SQLC for type-safe database queries:
+
+1. **Modifying queries**: Edit SQL files in `/sql/queries/`
+2. **Parameter syntax**: Use `sqlc.arg(param_name)` instead of `$1, $2`
+3. **Regenerate code**: Run `make sqlc` after changes
+4. **Test changes**: Run `make test`
+
+Key database features:
+
+- Upsert operations for idempotent data sync
+- JSONB fields for flexible configuration storage
+- Optimized indexes for high-frequency queries
+- Distributed job locking for production environments
+
+## External API Integration
+
+### Iddaa API
+
+- Turkish sports betting platform
+- Requires API key and anti-bot headers (critical for production)
+- Field mappings: `i` (id), `cid` (country), `si` (sport)
+- Rate limits must be respected
+
+### API-Football
+
+- Provides team/league enrichment data
+- Uses 70%+ confidence threshold for matching
+- Separate jobs for matching and enrichment
+- Currently 38 leagues successfully mapped
+
+### OpenAI API
+
+- Used for Turkish to English translations
+- Helps improve team/league matching accuracy
+- Optional but recommended for better data quality
+
+## Cron Jobs
+
+All jobs implement the `jobs.Job` interface with distributed locking support:
+
+- **config** - System configuration sync
+- **sports** - Sport types synchronization
+- **events** - Match events and basic odds (every 5 minutes)
+- **leagues** - League and team data sync
+- **detailed_odds** - High-frequency odds tracking
+- **smart_money_processor** - Detect odds movements and betting patterns
+- **api_football_team_matching** - Match teams with API-Football (daily)
+- **api_football_league_matching** - Match leagues with API-Football (daily)
+- **volume** - Betting volume collection
+- **distribution** - Betting distribution analytics
+
+Production mode: `--production-mode` flag enables distributed locking
+
+## Important Production Considerations
+
+1. **Anti-bot Headers**: Required for all Iddaa API calls to prevent blacklisting
+2. **Context Timeouts**: 30-minute timeout per job execution, proper deadline handling required
+3. **Rate Limiting**: Respect external API limits in job scheduling
+4. **Database Pooling**: Optimized connection pooling for high-frequency operations
+5. **Distributed Locking**: Prevents concurrent job execution in multi-instance deployments
+6. **Error Handling**: Comprehensive error logging with request IDs for tracing
+
+## Environment Variables
+
+Required for production:
+
+- `DATABASE_URL` - PostgreSQL connection string
+- `IDDAA_API_KEY` - Turkish betting platform API key
+- `API_FOOTBALL_KEY` - Football data API key
+- `OPENAI_API_KEY` - Translation service API key (optional)
+- `PORT` - API server port (default: 8080)
+- `LOG_LEVEL` - Logging level (default: info)
 
 ## Deployment
 
-Kubernetes deployment files are available in `deploy/iddaa-backend/`:
-- `namespace.yaml` - Kubernetes namespace
-- `deployment.yaml` - Both API and cron service deployments
-- `service.yaml` - Kubernetes service for API
-- `ingress.yaml` - Ingress configuration
-- `secrets.yaml` - Database and API key secrets
+The service deploys to Kubernetes using Azure Container Registry:
 
-Deploy with:
 ```bash
+# Build and push images
+cd core
+make build-images ORG=iddaalens TAG=latest
+make push-images ORG=iddaalens TAG=latest
+
+# Deploy to Kubernetes
 cd deploy/iddaa-backend
 ./deploy.sh
 ```
 
-## Cron Job Architecture
+Key deployment files:
 
-The cron service uses a robust job manager with the following features:
-- **Centralized Scheduling**: All jobs registered in `cmd/cron/main.go`
-- **Startup Execution**: All jobs run once on service startup for immediate data sync
-- **Contextual Logging**: Each job execution gets unique request ID and structured logging
-- **Timeout Management**: 30-minute timeout per job execution
-- **Graceful Shutdown**: Jobs stop cleanly on SIGINT/SIGTERM
+- `deployment.yaml` - Separate deployments for API and Cron
+- `configmap.yaml` - Environment configuration
+- `secrets.yaml` - Sensitive credentials
+- `service.yaml` - Load balancer configuration
 
-### Available Cron Jobs:
-- `config` - Sync market configurations from Iddaa API
-- `sports` - Fetch sport types
-- `events` - Sync matches and basic odds (every 5 minutes)
-- `leagues` - Sync leagues and teams with Football API mapping
-- `detailed_odds` - High-frequency detailed odds tracking
-- `volume` - Betting volume data collection
-- `distribution` - Betting distribution analytics
-- `statistics` - Match statistics collection
-- `analytics` - Refresh analytics views
-- `market_config` - Market type configurations
-- `api_football_league_matching` - Match Turkish leagues with API-Football data (daily at 3 AM)
-- `api_football_team_matching` - Match Turkish teams with API-Football data (daily at 4 AM)
-- `api_football_league_enrichment` - Enrich leagues with API-Football metadata (weekly)
-- `api_football_team_enrichment` - Enrich teams with API-Football metadata (weekly)
+## Testing Strategy
 
-## SQLC Configuration
+- Unit tests for critical business logic
+- Integration tests for API endpoints
+- Mock external API responses for reliable testing
+- Use `make test-race` before production deployments
+- Minimum 70% code coverage target
 
-The project uses sqlc for type-safe SQL query generation:
-- Queries are in `sql/queries/` directory
-- Schema is read from `migrations/` directory  
-- Generated Go code goes to `pkg/database/`
-- Run `make sqlc` after modifying SQL queries to regenerate code
+## Feature Implementation Status
 
-## Important Notes
+### Smart Money Tracker ✓
 
-- All SQL queries use `sqlc.arg(param_name)` instead of `$1, $2` etc.
-- Database migrations are idempotent using `CREATE TABLE IF NOT EXISTS` and `ON CONFLICT`
-- Database schema is in `sql/schema/` and migrations in `migrations/`
-- Iddaa API responses use specific field names: `i` (id), `cid` (country), `si` (sport), etc.
-- Football API integration uses similarity matching with 70%+ confidence threshold
-- Use `UpsertLeague` and `UpsertConfig` to handle existing data updates
-- Configuration data is stored as JSONB for flexible querying
-- API service has no database dependency - cron service handles all data operations
-- All jobs implement the `jobs.Job` interface with `Name()`, `Schedule()`, and `Execute(ctx)` methods
-- Logging uses zerolog with structured logging and request IDs for job tracing
+- Real-time odds movement detection
+- Confidence scoring algorithm
+- Alert generation for significant movements
+
+### Value Hunter ✓
+
+- Betting distribution analysis
+- Public vs sharp money identification
+- Value bet detection
+
+### Bankroll Boss (In Progress)
+
+- Kelly criterion calculations
+- Bet tracking and analytics
+- ROI performance metrics

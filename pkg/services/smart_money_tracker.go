@@ -63,7 +63,7 @@ type SmartMoneyIndicators struct {
 // AnalyzeOddsHistoryForAlerts processes new odds history records and creates alerts
 func (smt *SmartMoneyTracker) AnalyzeOddsHistoryForAlerts(ctx context.Context, oddsHistoryID int64) error {
 	// Get the odds history record
-	oddsHistory, err := smt.db.GetOddsHistoryByID(ctx, int32(oddsHistoryID))
+	oddsHistory, err := smt.db.GetOddsHistoryByID(ctx, oddsHistoryID)
 	if err != nil {
 		return fmt.Errorf("failed to get odds history record %d: %w", oddsHistoryID, err)
 	}

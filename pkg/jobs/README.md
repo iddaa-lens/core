@@ -4,7 +4,7 @@ This document describes all available cron jobs in the iddaa-core backend servic
 
 ## Overview
 
-The system includes 10 distinct cron jobs that handle data synchronization, analytics, and maintenance operations. All jobs support individual execution using the `--job` flag for testing and troubleshooting.
+The system includes 15 distinct cron jobs that handle data synchronization, analytics, and maintenance operations. All jobs support individual execution using the `--job` flag for testing and troubleshooting.
 
 ## Job List
 
@@ -110,6 +110,66 @@ The system includes 10 distinct cron jobs that handle data synchronization, anal
   - AI-powered translation for league names
   - Graceful degradation if external APIs unavailable
 
+### 11. Smart Money Processor (`smart_money_processor`)
+- **Schedule**: `*/10 * * * *` (Every 10 minutes)
+- **Purpose**: Detects smart money movements by analyzing odds changes and betting patterns
+- **Implementation**: `smart_money_processor.go`
+- **Dependencies**: Database access, requires existing odds and distribution data
+- **Database Tables**: `smart_money_alerts`, `smart_money_movements`
+- **Test Command**: `./cron --job=smart_money_processor --once`
+- **Features**:
+  - Calculates confidence scores based on multiple factors
+  - Identifies sharp vs public money movements
+  - Tracks historical smart money performance
+
+### 12. API Football League Matching (`api_football_league_matching`)
+- **Schedule**: `0 3 * * *` (Daily at 3 AM)
+- **Purpose**: Matches Turkish leagues with API-Football international league data
+- **Implementation**: `api_football_league_matching.go`
+- **Dependencies**: API-Football API key required
+- **Database Tables**: `league_mappings`
+- **Test Command**: `./cron --job=api_football_league_matching --once`
+- **Features**:
+  - Uses similarity matching with 70%+ confidence threshold
+  - Handles Turkish to English translations
+  - Creates mapping entries for data enrichment
+
+### 13. API Football Team Matching (`api_football_team_matching`)
+- **Schedule**: `0 4 * * *` (Daily at 4 AM)
+- **Purpose**: Matches Turkish teams with API-Football international team data
+- **Implementation**: `api_football_team_matching.go`
+- **Dependencies**: API-Football API key required
+- **Database Tables**: `team_mappings`
+- **Test Command**: `./cron --job=api_football_team_matching --once`
+- **Features**:
+  - League-aware team matching
+  - Confidence scoring for match quality
+  - Prevents duplicate mappings
+
+### 14. API Football League Enrichment (`api_football_league_enrichment`)
+- **Schedule**: `0 5 * * 0` (Weekly on Sundays at 5 AM)
+- **Purpose**: Enriches league data with logos, metadata from API-Football
+- **Implementation**: `api_football_league_enrichment.go`
+- **Dependencies**: API-Football API key required, requires league mappings
+- **Database Tables**: `leagues` (updates enrichment fields)
+- **Test Command**: `./cron --job=api_football_league_enrichment --once`
+- **Features**:
+  - Fetches league logos and country flags
+  - Updates league metadata (type, available features)
+  - Only processes mapped leagues
+
+### 15. API Football Team Enrichment (`api_football_team_enrichment`)
+- **Schedule**: `0 6 * * 0` (Weekly on Sundays at 6 AM)
+- **Purpose**: Enriches team data with logos, venue info from API-Football
+- **Implementation**: `api_football_team_enrichment.go`
+- **Dependencies**: API-Football API key required, requires team mappings
+- **Database Tables**: `teams` (updates enrichment fields)
+- **Test Command**: `./cron --job=api_football_team_enrichment --once`
+- **Features**:
+  - Fetches team logos and venue details
+  - Updates team metadata (founded year, capacity)
+  - Only processes mapped teams
+
 ## Job Dependencies
 
 ### Execution Order
@@ -123,11 +183,16 @@ Jobs should typically be run in this order for initial setup:
 7. `volume` - Volume data
 8. `distribution` - Distribution data
 9. `statistics` - Event statistics
-10. `analytics` - Analytics refresh
+10. `api_football_league_matching` - Match leagues with API-Football
+11. `api_football_team_matching` - Match teams with API-Football
+12. `api_football_league_enrichment` - Enrich league data
+13. `api_football_team_enrichment` - Enrich team data
+14. `smart_money_processor` - Smart money detection
+15. `analytics` - Analytics refresh
 
 ### External API Dependencies
-- **Iddaa API**: All jobs except `analytics`
-- **Football API**: `leagues` job (optional)
+- **Iddaa API**: All jobs except `analytics`, `smart_money_processor`, and API-Football enrichment jobs
+- **Football API**: `leagues`, `api_football_league_matching`, `api_football_team_matching`, `api_football_league_enrichment`, `api_football_team_enrichment`
 - **OpenAI API**: `leagues` job for translation (optional)
 
 ## Environment Variables
@@ -157,8 +222,15 @@ export DATABASE_URL="postgresql://iddaa:iddaa123@localhost:5433/iddaa_core?sslmo
 ./cron --job=volume --once
 ./cron --job=distribution --once
 
+# API-Football enrichment jobs (if API key is set)
+./cron --job=api_football_league_matching --once
+./cron --job=api_football_team_matching --once
+./cron --job=api_football_league_enrichment --once
+./cron --job=api_football_team_enrichment --once
+
 # Analytics jobs  
 ./cron --job=statistics --once
+./cron --job=smart_money_processor --once
 ./cron --job=analytics --once
 ```
 

@@ -23,24 +23,24 @@ INSERT INTO odds_history (
     change_percentage,
     multiplier
 ) VALUES (
-    $1, 
-    $2, 
-    $3, 
-    $4, 
-    $5,
-    $6,
+    $1::int, 
+    $2::int, 
+    $3::text, 
+    $4::decimal, 
+    $5::decimal,
+    $6::decimal,
     -- Calculate change amount: new_odds - previous_odds
-    $4::numeric - $5::numeric,
+    $4::decimal - $5::decimal,
     -- Calculate change percentage: ((new_odds - previous_odds) / previous_odds) * 100
     CASE 
-        WHEN $5::numeric > 0 THEN 
-            ROUND((($4::numeric - $5::numeric) / $5::numeric * 100), 2)
+        WHEN $5::decimal > 0 THEN 
+            ROUND((($4::decimal - $5::decimal) / $5::decimal * 100), 2)
         ELSE 0 
     END,
     -- Calculate multiplier: new_odds / previous_odds
     CASE 
-        WHEN $5::numeric > 0 THEN 
-            ROUND(($4::numeric / $5::numeric), 3)
+        WHEN $5::decimal > 0 THEN 
+            ROUND(($4::decimal / $5::decimal), 3)
         ELSE 1 
     END
 )
@@ -48,8 +48,8 @@ RETURNING id, event_id, market_type_id, outcome, odds_value, previous_value, win
 `
 
 type CreateOddsHistoryParams struct {
-	EventID       pgtype.Int4    `db:"event_id" json:"event_id"`
-	MarketTypeID  pgtype.Int4    `db:"market_type_id" json:"market_type_id"`
+	EventID       int32          `db:"event_id" json:"event_id"`
+	MarketTypeID  int32          `db:"market_type_id" json:"market_type_id"`
 	Outcome       string         `db:"outcome" json:"outcome"`
 	OddsValue     pgtype.Numeric `db:"odds_value" json:"odds_value"`
 	PreviousValue pgtype.Numeric `db:"previous_value" json:"previous_value"`
@@ -94,10 +94,10 @@ SELECT
 FROM odds_history oh
 JOIN events e ON oh.event_id = e.id
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE ABS(oh.change_percentage) > $1
-AND oh.recorded_at > $2
+WHERE ABS(oh.change_percentage) > $1::decimal
+AND oh.recorded_at > $2::timestamp
 ORDER BY ABS(oh.change_percentage) DESC
-LIMIT $3
+LIMIT $3::int
 `
 
 type GetBigMoversParams struct {
@@ -168,7 +168,7 @@ const getCurrentOdds = `-- name: GetCurrentOdds :many
 SELECT co.id, co.event_id, co.market_type_id, co.outcome, co.odds_value, co.opening_value, co.highest_value, co.lowest_value, co.winning_odds, co.total_movement, co.movement_percentage, co.last_updated, mt.name as market_name, mt.code as market_code
 FROM current_odds co
 JOIN market_types mt ON co.market_type_id = mt.id
-WHERE co.event_id = $1
+WHERE co.event_id = $1::int
 `
 
 type GetCurrentOddsRow struct {
@@ -188,7 +188,7 @@ type GetCurrentOddsRow struct {
 	MarketCode         string           `db:"market_code" json:"market_code"`
 }
 
-func (q *Queries) GetCurrentOdds(ctx context.Context, eventID pgtype.Int4) ([]GetCurrentOddsRow, error) {
+func (q *Queries) GetCurrentOdds(ctx context.Context, eventID int32) ([]GetCurrentOddsRow, error) {
 	rows, err := q.db.Query(ctx, getCurrentOdds, eventID)
 	if err != nil {
 		return nil, err
@@ -227,13 +227,13 @@ const getCurrentOddsByMarket = `-- name: GetCurrentOddsByMarket :many
 SELECT co.id, co.event_id, co.market_type_id, co.outcome, co.odds_value, co.opening_value, co.highest_value, co.lowest_value, co.winning_odds, co.total_movement, co.movement_percentage, co.last_updated, mt.name as market_name, mt.code as market_code
 FROM current_odds co
 JOIN market_types mt ON co.market_type_id = mt.id
-WHERE co.event_id = $1 
-AND co.market_type_id = $2
+WHERE co.event_id = $1::int 
+AND co.market_type_id = $2::int
 `
 
 type GetCurrentOddsByMarketParams struct {
-	EventID      pgtype.Int4 `db:"event_id" json:"event_id"`
-	MarketTypeID pgtype.Int4 `db:"market_type_id" json:"market_type_id"`
+	EventID      int32 `db:"event_id" json:"event_id"`
+	MarketTypeID int32 `db:"market_type_id" json:"market_type_id"`
 }
 
 type GetCurrentOddsByMarketRow struct {
@@ -288,11 +288,65 @@ func (q *Queries) GetCurrentOddsByMarket(ctx context.Context, arg GetCurrentOdds
 	return items, nil
 }
 
-const getOddsHistoryByID = `-- name: GetOddsHistoryByID :one
-SELECT id, event_id, market_type_id, outcome, odds_value, previous_value, winning_odds, change_amount, change_percentage, multiplier, recorded_at, sharp_money_indicator, is_reverse_movement, significance_level, minutes_to_kickoff FROM odds_history WHERE id = $1
+const getCurrentOddsByOutcome = `-- name: GetCurrentOddsByOutcome :one
+SELECT co.id, co.event_id, co.market_type_id, co.outcome, co.odds_value, co.opening_value, co.highest_value, co.lowest_value, co.winning_odds, co.total_movement, co.movement_percentage, co.last_updated, mt.name as market_name, mt.code as market_code
+FROM current_odds co
+JOIN market_types mt ON co.market_type_id = mt.id
+WHERE co.event_id = $1::int 
+AND co.market_type_id = $2::int
+AND co.outcome = $3::text
 `
 
-func (q *Queries) GetOddsHistoryByID(ctx context.Context, id int32) (OddsHistory, error) {
+type GetCurrentOddsByOutcomeParams struct {
+	EventID      int32  `db:"event_id" json:"event_id"`
+	MarketTypeID int32  `db:"market_type_id" json:"market_type_id"`
+	Outcome      string `db:"outcome" json:"outcome"`
+}
+
+type GetCurrentOddsByOutcomeRow struct {
+	ID                 int32            `db:"id" json:"id"`
+	EventID            pgtype.Int4      `db:"event_id" json:"event_id"`
+	MarketTypeID       pgtype.Int4      `db:"market_type_id" json:"market_type_id"`
+	Outcome            string           `db:"outcome" json:"outcome"`
+	OddsValue          pgtype.Numeric   `db:"odds_value" json:"odds_value"`
+	OpeningValue       pgtype.Numeric   `db:"opening_value" json:"opening_value"`
+	HighestValue       pgtype.Numeric   `db:"highest_value" json:"highest_value"`
+	LowestValue        pgtype.Numeric   `db:"lowest_value" json:"lowest_value"`
+	WinningOdds        pgtype.Numeric   `db:"winning_odds" json:"winning_odds"`
+	TotalMovement      pgtype.Numeric   `db:"total_movement" json:"total_movement"`
+	MovementPercentage pgtype.Numeric   `db:"movement_percentage" json:"movement_percentage"`
+	LastUpdated        pgtype.Timestamp `db:"last_updated" json:"last_updated"`
+	MarketName         string           `db:"market_name" json:"market_name"`
+	MarketCode         string           `db:"market_code" json:"market_code"`
+}
+
+func (q *Queries) GetCurrentOddsByOutcome(ctx context.Context, arg GetCurrentOddsByOutcomeParams) (GetCurrentOddsByOutcomeRow, error) {
+	row := q.db.QueryRow(ctx, getCurrentOddsByOutcome, arg.EventID, arg.MarketTypeID, arg.Outcome)
+	var i GetCurrentOddsByOutcomeRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.MarketTypeID,
+		&i.Outcome,
+		&i.OddsValue,
+		&i.OpeningValue,
+		&i.HighestValue,
+		&i.LowestValue,
+		&i.WinningOdds,
+		&i.TotalMovement,
+		&i.MovementPercentage,
+		&i.LastUpdated,
+		&i.MarketName,
+		&i.MarketCode,
+	)
+	return i, err
+}
+
+const getOddsHistoryByID = `-- name: GetOddsHistoryByID :one
+SELECT id, event_id, market_type_id, outcome, odds_value, previous_value, winning_odds, change_amount, change_percentage, multiplier, recorded_at, sharp_money_indicator, is_reverse_movement, significance_level, minutes_to_kickoff FROM odds_history WHERE id = $1::bigint
+`
+
+func (q *Queries) GetOddsHistoryByID(ctx context.Context, id int64) (OddsHistory, error) {
 	row := q.db.QueryRow(ctx, getOddsHistoryByID, id)
 	var i OddsHistory
 	err := row.Scan(
@@ -319,14 +373,14 @@ const getOddsMovements = `-- name: GetOddsMovements :many
 SELECT oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.recorded_at, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff, mt.name as market_name, mt.code as market_code
 FROM odds_history oh
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE oh.event_id = $1
+WHERE oh.event_id = $1::int
 ORDER BY oh.recorded_at DESC
-LIMIT $2
+LIMIT $2::int
 `
 
 type GetOddsMovementsParams struct {
-	EventID    pgtype.Int4 `db:"event_id" json:"event_id"`
-	LimitCount int32       `db:"limit_count" json:"limit_count"`
+	EventID    int32 `db:"event_id" json:"event_id"`
+	LimitCount int32 `db:"limit_count" json:"limit_count"`
 }
 
 type GetOddsMovementsRow struct {
@@ -392,11 +446,11 @@ SELECT oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.prev
 FROM odds_history oh
 JOIN events e ON oh.event_id = e.id
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE oh.recorded_at >= $1
+WHERE oh.recorded_at >= $1::timestamp
 AND e.event_date > NOW()
-AND ABS(oh.change_percentage) >= $2
+AND ABS(oh.change_percentage) >= $2::decimal
 ORDER BY oh.recorded_at DESC
-LIMIT $3
+LIMIT $3::int
 `
 
 type GetRecentOddsHistoryParams struct {
@@ -480,14 +534,14 @@ INSERT INTO current_odds (
     total_movement,
     movement_percentage
 ) VALUES (
-    $1, 
-    $2, 
-    $3, 
-    $4, 
-    $5, 
-    $6, 
-    $7,
-    $8,
+    $1::int, 
+    $2::int, 
+    $3::text, 
+    $4::decimal, 
+    $5::decimal, 
+    $6::decimal, 
+    $7::decimal,
+    $8::decimal,
     0, -- First time, no movement
     0  -- First time, no movement percentage
 )
@@ -509,8 +563,8 @@ RETURNING id, event_id, market_type_id, outcome, odds_value, opening_value, high
 `
 
 type UpsertCurrentOddsParams struct {
-	EventID      pgtype.Int4    `db:"event_id" json:"event_id"`
-	MarketTypeID pgtype.Int4    `db:"market_type_id" json:"market_type_id"`
+	EventID      int32          `db:"event_id" json:"event_id"`
+	MarketTypeID int32          `db:"market_type_id" json:"market_type_id"`
 	Outcome      string         `db:"outcome" json:"outcome"`
 	OddsValue    pgtype.Numeric `db:"odds_value" json:"odds_value"`
 	OpeningValue pgtype.Numeric `db:"opening_value" json:"opening_value"`

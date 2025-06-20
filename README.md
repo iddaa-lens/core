@@ -28,7 +28,7 @@ make run
 
 ## 📁 Project Structure
 
-```
+```text
 ├── cmd/
 │   ├── api/              # REST API service
 │   └── cron/             # Background job scheduler
@@ -77,10 +77,12 @@ make push-image ORG=iddaa-backend TAG=v1.0.0
 ## 📊 Services
 
 ### API Service (`cmd/api`)
+
 - `GET /health` - Health check endpoint returning JSON status
 - `GET /` - Simple root endpoint returning text response
 
 ### Cron Service (`cmd/cron`)
+
 - **Sports Sync**: Fetches sport types from Iddaa API
 - **Leagues Sync**: Syncs leagues and teams (hourly)
 - **Events Sync**: Fetches matches and odds (every 5 minutes)
@@ -106,6 +108,7 @@ cd deploy/iddaa-backend
 ```
 
 Deployment includes:
+
 - Kubernetes namespace
 - API service deployment (2 replicas)
 - ClusterIP service

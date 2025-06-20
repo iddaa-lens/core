@@ -13,7 +13,7 @@ import (
 
 const countEventsFiltered = `-- name: CountEventsFiltered :one
 SELECT
-  COUNT(*)
+  COUNT(*)::int
 FROM
   events e
   JOIN teams ht ON e.home_team_id = ht.id
@@ -21,31 +21,31 @@ FROM
   JOIN leagues l ON e.league_id = l.id
   JOIN sports s ON e.sport_id = s.id
 WHERE
-  e.event_date >= $1
-  AND e.event_date <= $2
+  e.event_date >= $1::timestamp
+  AND e.event_date <= $2::timestamp
   AND (
-    $3 = ''
-    OR s.code = $3
+    $3::text = ''
+    OR s.code = $3::text
   )
   AND (
-    $4 = ''
-    OR l.name ILIKE '%' || $4 || '%'
+    $4::text = ''
+    OR l.name ILIKE '%' || $4::text || '%'
   )
   AND (
-    $5 = ''
-    OR e.status = $5
+    $5::text = ''
+    OR e.status = $5::text
   )
 `
 
 type CountEventsFilteredParams struct {
 	TimeAfter  pgtype.Timestamp `db:"time_after" json:"time_after"`
 	TimeBefore pgtype.Timestamp `db:"time_before" json:"time_before"`
-	SportCode  interface{}      `db:"sport_code" json:"sport_code"`
-	LeagueName interface{}      `db:"league_name" json:"league_name"`
-	Status     interface{}      `db:"status" json:"status"`
+	SportCode  string           `db:"sport_code" json:"sport_code"`
+	LeagueName string           `db:"league_name" json:"league_name"`
+	Status     string           `db:"status" json:"status"`
 }
 
-func (q *Queries) CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int64, error) {
+func (q *Queries) CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countEventsFiltered,
 		arg.TimeAfter,
 		arg.TimeBefore,
@@ -53,9 +53,9 @@ func (q *Queries) CountEventsFiltered(ctx context.Context, arg CountEventsFilter
 		arg.LeagueName,
 		arg.Status,
 	)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const createEvent = `-- name: CreateEvent :one
@@ -70,20 +70,20 @@ INSERT INTO
   )
 VALUES
   (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6
+    $1::text,
+    $2::int,
+    $3::int,
+    $4::int,
+    $5::timestamp,
+    $6::text
   ) RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type CreateEventParams struct {
 	ExternalID string           `db:"external_id" json:"external_id"`
-	LeagueID   pgtype.Int4      `db:"league_id" json:"league_id"`
-	HomeTeamID pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
-	AwayTeamID pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	LeagueID   int32            `db:"league_id" json:"league_id"`
+	HomeTeamID int32            `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID int32            `db:"away_team_id" json:"away_team_id"`
 	EventDate  pgtype.Timestamp `db:"event_date" json:"event_date"`
 	Status     string           `db:"status" json:"status"`
 }
@@ -148,7 +148,7 @@ ORDER BY
   END,
   event_date ASC
 LIMIT
-  $1
+  $1::int
 `
 
 func (q *Queries) GetActiveEventsForDetailedSync(ctx context.Context, limitCount int32) ([]Event, error) {
@@ -210,7 +210,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   JOIN leagues l ON e.league_id = l.id
 WHERE
-  e.id = $1
+  e.id = $1::int
 `
 
 type GetEventRow struct {
@@ -294,7 +294,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   LEFT JOIN leagues l ON e.league_id = l.id
 WHERE
-  e.external_id = $1
+  e.external_id = $1::text
 `
 
 type GetEventByExternalIDRow struct {
@@ -372,7 +372,7 @@ SELECT
 FROM
   events
 WHERE
-  external_id = $1
+  external_id = $1::text
 `
 
 func (q *Queries) GetEventByExternalIDSimple(ctx context.Context, externalID string) (Event, error) {
@@ -415,7 +415,7 @@ SELECT
 FROM
   events
 WHERE
-  id = $1
+  id = $1::int
 `
 
 func (q *Queries) GetEventByID(ctx context.Context, id int32) (Event, error) {
@@ -461,18 +461,18 @@ FROM
   LEFT JOIN leagues l ON e.league_id = l.id
 WHERE
   (
-    e.home_team_id = $1
-    OR e.away_team_id = $1
+    e.home_team_id = $1::int
+    OR e.away_team_id = $1::int
   )
-  AND e.event_date >= $2
+  AND e.event_date >= $2::timestamp
 ORDER BY
   e.event_date DESC
 LIMIT
-  $3
+  $3::int
 `
 
 type GetEventsByTeamParams struct {
-	TeamID     pgtype.Int4      `db:"team_id" json:"team_id"`
+	TeamID     int32            `db:"team_id" json:"team_id"`
 	SinceDate  pgtype.Timestamp `db:"since_date" json:"since_date"`
 	LimitCount int32            `db:"limit_count" json:"limit_count"`
 }
@@ -567,7 +567,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   JOIN leagues l ON e.league_id = l.id
 WHERE
-  DATE(e.event_date) = DATE($1)
+  DATE(e.event_date) = DATE($1::timestamp)
 ORDER BY
   e.event_date
 `
@@ -604,7 +604,7 @@ type ListEventsByDateRow struct {
 	LeagueName              string           `db:"league_name" json:"league_name"`
 }
 
-func (q *Queries) ListEventsByDate(ctx context.Context, eventDate interface{}) ([]ListEventsByDateRow, error) {
+func (q *Queries) ListEventsByDate(ctx context.Context, eventDate pgtype.Timestamp) ([]ListEventsByDateRow, error) {
 	rows, err := q.db.Query(ctx, listEventsByDate, eventDate)
 	if err != nil {
 		return nil, err
@@ -697,32 +697,32 @@ FROM
   JOIN leagues l ON e.league_id = l.id
   JOIN sports s ON e.sport_id = s.id
 WHERE
-  e.event_date >= $1
-  AND e.event_date <= $2
+  e.event_date >= $1::timestamp
+  AND e.event_date <= $2::timestamp
   AND (
-    $3 = ''
-    OR s.code = $3
+    $3::text = ''
+    OR s.code = $3::text
   )
   AND (
-    $4 = ''
-    OR l.name ILIKE '%' || $4 || '%'
+    $4::text = ''
+    OR l.name ILIKE '%' || $4::text || '%'
   )
   AND (
-    $5 = ''
-    OR e.status = $5
+    $5::text = ''
+    OR e.status = $5::text
   )
 ORDER BY
   e.event_date ASC
 LIMIT
-  $7 OFFSET $6
+  $7::int OFFSET $6::int
 `
 
 type ListEventsFilteredParams struct {
 	TimeAfter   pgtype.Timestamp `db:"time_after" json:"time_after"`
 	TimeBefore  pgtype.Timestamp `db:"time_before" json:"time_before"`
-	SportCode   interface{}      `db:"sport_code" json:"sport_code"`
-	LeagueName  interface{}      `db:"league_name" json:"league_name"`
-	Status      interface{}      `db:"status" json:"status"`
+	SportCode   string           `db:"sport_code" json:"sport_code"`
+	LeagueName  string           `db:"league_name" json:"league_name"`
+	Status      string           `db:"status" json:"status"`
 	OffsetCount int32            `db:"offset_count" json:"offset_count"`
 	LimitCount  int32            `db:"limit_count" json:"limit_count"`
 }
@@ -831,19 +831,19 @@ const updateEventStatus = `-- name: UpdateEventStatus :one
 UPDATE
   events
 SET
-  status = $1,
-  home_score = $2,
-  away_score = $3,
+  status = $1::text,
+  home_score = $2::int,
+  away_score = $3::int,
   updated_at = CURRENT_TIMESTAMP
 WHERE
-  id = $4 RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
+  id = $4::int RETURNING id, external_id, league_id, home_team_id, away_team_id, slug, event_date, status, home_score, away_score, is_live, minute_of_match, half, betting_volume_percentage, volume_rank, volume_updated_at, bulletin_id, version, sport_id, bet_program, mbc, has_king_odd, odds_count, has_combine, created_at, updated_at
 `
 
 type UpdateEventStatusParams struct {
-	Status    string      `db:"status" json:"status"`
-	HomeScore pgtype.Int4 `db:"home_score" json:"home_score"`
-	AwayScore pgtype.Int4 `db:"away_score" json:"away_score"`
-	ID        int32       `db:"id" json:"id"`
+	Status    string `db:"status" json:"status"`
+	HomeScore int32  `db:"home_score" json:"home_score"`
+	AwayScore int32  `db:"away_score" json:"away_score"`
+	ID        int32  `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) (Event, error) {
@@ -908,23 +908,23 @@ INSERT INTO
   )
 VALUES
   (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7,
-    $8,
-    $9,
-    $10,
-    $11,
-    $12,
-    $13,
-    $14,
-    $15,
-    $16,
-    $17
+    $1::text,
+    $2::int,
+    $3::int,
+    $4::int,
+    $5::timestamp,
+    $6::text,
+    $7::int,
+    $8::int,
+    $9::bigint,
+    $10::bigint,
+    $11::int,
+    $12::int,
+    $13::int,
+    $14::boolean,
+    $15::int,
+    $16::boolean,
+    $17::boolean
   ) ON CONFLICT (external_id) DO
 UPDATE
 SET
@@ -949,22 +949,22 @@ SET
 
 type UpsertEventParams struct {
 	ExternalID string           `db:"external_id" json:"external_id"`
-	LeagueID   pgtype.Int4      `db:"league_id" json:"league_id"`
-	HomeTeamID pgtype.Int4      `db:"home_team_id" json:"home_team_id"`
-	AwayTeamID pgtype.Int4      `db:"away_team_id" json:"away_team_id"`
+	LeagueID   int32            `db:"league_id" json:"league_id"`
+	HomeTeamID int32            `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID int32            `db:"away_team_id" json:"away_team_id"`
 	EventDate  pgtype.Timestamp `db:"event_date" json:"event_date"`
 	Status     string           `db:"status" json:"status"`
-	HomeScore  pgtype.Int4      `db:"home_score" json:"home_score"`
-	AwayScore  pgtype.Int4      `db:"away_score" json:"away_score"`
-	BulletinID pgtype.Int8      `db:"bulletin_id" json:"bulletin_id"`
-	Version    pgtype.Int8      `db:"version" json:"version"`
-	SportID    pgtype.Int4      `db:"sport_id" json:"sport_id"`
-	BetProgram pgtype.Int4      `db:"bet_program" json:"bet_program"`
-	Mbc        pgtype.Int4      `db:"mbc" json:"mbc"`
-	HasKingOdd pgtype.Bool      `db:"has_king_odd" json:"has_king_odd"`
-	OddsCount  pgtype.Int4      `db:"odds_count" json:"odds_count"`
-	HasCombine pgtype.Bool      `db:"has_combine" json:"has_combine"`
-	IsLive     pgtype.Bool      `db:"is_live" json:"is_live"`
+	HomeScore  int32            `db:"home_score" json:"home_score"`
+	AwayScore  int32            `db:"away_score" json:"away_score"`
+	BulletinID int64            `db:"bulletin_id" json:"bulletin_id"`
+	Version    int64            `db:"version" json:"version"`
+	SportID    int32            `db:"sport_id" json:"sport_id"`
+	BetProgram int32            `db:"bet_program" json:"bet_program"`
+	Mbc        int32            `db:"mbc" json:"mbc"`
+	HasKingOdd bool             `db:"has_king_odd" json:"has_king_odd"`
+	OddsCount  int32            `db:"odds_count" json:"odds_count"`
+	HasCombine bool             `db:"has_combine" json:"has_combine"`
+	IsLive     bool             `db:"is_live" json:"is_live"`
 }
 
 func (q *Queries) UpsertEvent(ctx context.Context, arg UpsertEventParams) (Event, error) {

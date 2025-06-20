@@ -2,14 +2,22 @@
 SELECT co.*, mt.name as market_name, mt.code as market_code
 FROM current_odds co
 JOIN market_types mt ON co.market_type_id = mt.id
-WHERE co.event_id = sqlc.arg(event_id);
+WHERE co.event_id = sqlc.arg('event_id')::int;
 
 -- name: GetCurrentOddsByMarket :many
 SELECT co.*, mt.name as market_name, mt.code as market_code
 FROM current_odds co
 JOIN market_types mt ON co.market_type_id = mt.id
-WHERE co.event_id = sqlc.arg(event_id) 
-AND co.market_type_id = sqlc.arg(market_type_id);
+WHERE co.event_id = sqlc.arg('event_id')::int 
+AND co.market_type_id = sqlc.arg('market_type_id')::int;
+
+-- name: GetCurrentOddsByOutcome :one
+SELECT co.*, mt.name as market_name, mt.code as market_code
+FROM current_odds co
+JOIN market_types mt ON co.market_type_id = mt.id
+WHERE co.event_id = sqlc.arg('event_id')::int 
+AND co.market_type_id = sqlc.arg('market_type_id')::int
+AND co.outcome = sqlc.arg('outcome')::text;
 
 -- name: UpsertCurrentOdds :one
 INSERT INTO current_odds (
@@ -24,14 +32,14 @@ INSERT INTO current_odds (
     total_movement,
     movement_percentage
 ) VALUES (
-    sqlc.arg(event_id), 
-    sqlc.arg(market_type_id), 
-    sqlc.arg(outcome), 
-    sqlc.arg(odds_value), 
-    sqlc.arg(opening_value), 
-    sqlc.arg(highest_value), 
-    sqlc.arg(lowest_value),
-    sqlc.arg(winning_odds),
+    sqlc.arg('event_id')::int, 
+    sqlc.arg('market_type_id')::int, 
+    sqlc.arg('outcome')::text, 
+    sqlc.arg('odds_value')::decimal, 
+    sqlc.arg('opening_value')::decimal, 
+    sqlc.arg('highest_value')::decimal, 
+    sqlc.arg('lowest_value')::decimal,
+    sqlc.arg('winning_odds')::decimal,
     0, -- First time, no movement
     0  -- First time, no movement percentage
 )
@@ -63,24 +71,24 @@ INSERT INTO odds_history (
     change_percentage,
     multiplier
 ) VALUES (
-    sqlc.arg(event_id), 
-    sqlc.arg(market_type_id), 
-    sqlc.arg(outcome), 
-    sqlc.arg(odds_value), 
-    sqlc.arg(previous_value),
-    sqlc.arg(winning_odds),
+    sqlc.arg('event_id')::int, 
+    sqlc.arg('market_type_id')::int, 
+    sqlc.arg('outcome')::text, 
+    sqlc.arg('odds_value')::decimal, 
+    sqlc.arg('previous_value')::decimal,
+    sqlc.arg('winning_odds')::decimal,
     -- Calculate change amount: new_odds - previous_odds
-    sqlc.arg(odds_value)::numeric - sqlc.arg(previous_value)::numeric,
+    sqlc.arg('odds_value')::decimal - sqlc.arg('previous_value')::decimal,
     -- Calculate change percentage: ((new_odds - previous_odds) / previous_odds) * 100
     CASE 
-        WHEN sqlc.arg(previous_value)::numeric > 0 THEN 
-            ROUND(((sqlc.arg(odds_value)::numeric - sqlc.arg(previous_value)::numeric) / sqlc.arg(previous_value)::numeric * 100), 2)
+        WHEN sqlc.arg('previous_value')::decimal > 0 THEN 
+            ROUND(((sqlc.arg('odds_value')::decimal - sqlc.arg('previous_value')::decimal) / sqlc.arg('previous_value')::decimal * 100), 2)
         ELSE 0 
     END,
     -- Calculate multiplier: new_odds / previous_odds
     CASE 
-        WHEN sqlc.arg(previous_value)::numeric > 0 THEN 
-            ROUND((sqlc.arg(odds_value)::numeric / sqlc.arg(previous_value)::numeric), 3)
+        WHEN sqlc.arg('previous_value')::decimal > 0 THEN 
+            ROUND((sqlc.arg('odds_value')::decimal / sqlc.arg('previous_value')::decimal), 3)
         ELSE 1 
     END
 )
@@ -90,12 +98,12 @@ RETURNING *;
 SELECT oh.*, mt.name as market_name, mt.code as market_code
 FROM odds_history oh
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE oh.event_id = sqlc.arg(event_id)
+WHERE oh.event_id = sqlc.arg('event_id')::int
 ORDER BY oh.recorded_at DESC
-LIMIT sqlc.arg(limit_count);
+LIMIT sqlc.arg('limit_count')::int;
 
 -- name: GetOddsHistoryByID :one
-SELECT * FROM odds_history WHERE id = sqlc.arg(id);
+SELECT * FROM odds_history WHERE id = sqlc.arg('id')::bigint;
 
 -- name: GetBigMovers :many
 SELECT 
@@ -105,18 +113,18 @@ SELECT
 FROM odds_history oh
 JOIN events e ON oh.event_id = e.id
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE ABS(oh.change_percentage) > sqlc.arg(min_change_pct)
-AND oh.recorded_at > sqlc.arg(since_time)
+WHERE ABS(oh.change_percentage) > sqlc.arg('min_change_pct')::decimal
+AND oh.recorded_at > sqlc.arg('since_time')::timestamp
 ORDER BY ABS(oh.change_percentage) DESC
-LIMIT sqlc.arg(limit_count);
+LIMIT sqlc.arg('limit_count')::int;
 
 -- name: GetRecentOddsHistory :many
 SELECT oh.*, e.event_date, e.is_live, mt.name as market_name, mt.code as market_code
 FROM odds_history oh
 JOIN events e ON oh.event_id = e.id
 JOIN market_types mt ON oh.market_type_id = mt.id
-WHERE oh.recorded_at >= sqlc.arg(since_time)
+WHERE oh.recorded_at >= sqlc.arg('since_time')::timestamp
 AND e.event_date > NOW()
-AND ABS(oh.change_percentage) >= sqlc.arg(min_change_pct)
+AND ABS(oh.change_percentage) >= sqlc.arg('min_change_pct')::decimal
 ORDER BY oh.recorded_at DESC
-LIMIT sqlc.arg(limit_count);
+LIMIT sqlc.arg('limit_count')::int;

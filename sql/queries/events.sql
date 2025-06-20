@@ -10,7 +10,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   JOIN leagues l ON e.league_id = l.id
 WHERE
-  e.id = sqlc.arg(id);
+  e.id = sqlc.arg('id')::int;
 
 -- name: GetEventByID :one
 SELECT
@@ -18,7 +18,7 @@ SELECT
 FROM
   events
 WHERE
-  id = sqlc.arg(id);
+  id = sqlc.arg('id')::int;
 
 -- name: GetEventByExternalID :one
 SELECT
@@ -32,7 +32,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   LEFT JOIN leagues l ON e.league_id = l.id
 WHERE
-  e.external_id = sqlc.arg(external_id);
+  e.external_id = sqlc.arg('external_id')::text;
 
 -- name: GetEventByExternalIDSimple :one
 SELECT
@@ -40,7 +40,7 @@ SELECT
 FROM
   events
 WHERE
-  external_id = sqlc.arg(external_id);
+  external_id = sqlc.arg('external_id')::text;
 
 -- name: ListEventsByDate :many
 SELECT
@@ -54,7 +54,7 @@ FROM
   JOIN teams at ON e.away_team_id = at.id
   JOIN leagues l ON e.league_id = l.id
 WHERE
-  DATE(e.event_date) = DATE(sqlc.arg(event_date))
+  DATE(e.event_date) = DATE(sqlc.arg('event_date')::timestamp)
 ORDER BY
   e.event_date;
 
@@ -70,24 +70,24 @@ INSERT INTO
   )
 VALUES
   (
-    sqlc.arg(external_id),
-    sqlc.arg(league_id),
-    sqlc.arg(home_team_id),
-    sqlc.arg(away_team_id),
-    sqlc.arg(event_date),
-    sqlc.arg(status)
+    sqlc.arg('external_id')::text,
+    sqlc.arg('league_id')::int,
+    sqlc.arg('home_team_id')::int,
+    sqlc.arg('away_team_id')::int,
+    sqlc.arg('event_date')::timestamp,
+    sqlc.arg('status')::text
   ) RETURNING *;
 
 -- name: UpdateEventStatus :one
 UPDATE
   events
 SET
-  status = sqlc.arg(status),
-  home_score = sqlc.arg(home_score),
-  away_score = sqlc.arg(away_score),
+  status = sqlc.arg('status')::text,
+  home_score = sqlc.arg('home_score')::int,
+  away_score = sqlc.arg('away_score')::int,
   updated_at = CURRENT_TIMESTAMP
 WHERE
-  id = sqlc.arg(id) RETURNING *;
+  id = sqlc.arg('id')::int RETURNING *;
 
 -- name: GetActiveEventsForDetailedSync :many
 SELECT
@@ -108,7 +108,7 @@ ORDER BY
   END,
   event_date ASC
 LIMIT
-  sqlc.arg(limit_count);
+  sqlc.arg('limit_count')::int;
 
 -- name: UpsertEvent :one
 INSERT INTO
@@ -133,23 +133,23 @@ INSERT INTO
   )
 VALUES
   (
-    sqlc.arg(external_id),
-    sqlc.arg(league_id),
-    sqlc.arg(home_team_id),
-    sqlc.arg(away_team_id),
-    sqlc.arg(event_date),
-    sqlc.arg(status),
-    sqlc.arg(home_score),
-    sqlc.arg(away_score),
-    sqlc.arg(bulletin_id),
-    sqlc.arg(version),
-    sqlc.arg(sport_id),
-    sqlc.arg(bet_program),
-    sqlc.arg(mbc),
-    sqlc.arg(has_king_odd),
-    sqlc.arg(odds_count),
-    sqlc.arg(has_combine),
-    sqlc.arg(is_live)
+    sqlc.arg('external_id')::text,
+    sqlc.arg('league_id')::int,
+    sqlc.arg('home_team_id')::int,
+    sqlc.arg('away_team_id')::int,
+    sqlc.arg('event_date')::timestamp,
+    sqlc.arg('status')::text,
+    sqlc.arg('home_score')::int,
+    sqlc.arg('away_score')::int,
+    sqlc.arg('bulletin_id')::bigint,
+    sqlc.arg('version')::bigint,
+    sqlc.arg('sport_id')::int,
+    sqlc.arg('bet_program')::int,
+    sqlc.arg('mbc')::int,
+    sqlc.arg('has_king_odd')::boolean,
+    sqlc.arg('odds_count')::int,
+    sqlc.arg('has_combine')::boolean,
+    sqlc.arg('is_live')::boolean
   ) ON CONFLICT (external_id) DO
 UPDATE
 SET
@@ -214,28 +214,28 @@ FROM
   JOIN leagues l ON e.league_id = l.id
   JOIN sports s ON e.sport_id = s.id
 WHERE
-  e.event_date >= sqlc.arg(time_after)
-  AND e.event_date <= sqlc.arg(time_before)
+  e.event_date >= sqlc.arg('time_after')::timestamp
+  AND e.event_date <= sqlc.arg('time_before')::timestamp
   AND (
-    sqlc.arg(sport_code) = ''
-    OR s.code = sqlc.arg(sport_code)
+    sqlc.arg('sport_code')::text = ''
+    OR s.code = sqlc.arg('sport_code')::text
   )
   AND (
-    sqlc.arg(league_name) = ''
-    OR l.name ILIKE '%' || sqlc.arg(league_name) || '%'
+    sqlc.arg('league_name')::text = ''
+    OR l.name ILIKE '%' || sqlc.arg('league_name')::text || '%'
   )
   AND (
-    sqlc.arg(status) = ''
-    OR e.status = sqlc.arg(status)
+    sqlc.arg('status')::text = ''
+    OR e.status = sqlc.arg('status')::text
   )
 ORDER BY
   e.event_date ASC
 LIMIT
-  sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);
+  sqlc.arg('limit_count')::int OFFSET sqlc.arg('offset_count')::int;
 
 -- name: CountEventsFiltered :one
 SELECT
-  COUNT(*)
+  COUNT(*)::int
 FROM
   events e
   JOIN teams ht ON e.home_team_id = ht.id
@@ -243,19 +243,19 @@ FROM
   JOIN leagues l ON e.league_id = l.id
   JOIN sports s ON e.sport_id = s.id
 WHERE
-  e.event_date >= sqlc.arg(time_after)
-  AND e.event_date <= sqlc.arg(time_before)
+  e.event_date >= sqlc.arg('time_after')::timestamp
+  AND e.event_date <= sqlc.arg('time_before')::timestamp
   AND (
-    sqlc.arg(sport_code) = ''
-    OR s.code = sqlc.arg(sport_code)
+    sqlc.arg('sport_code')::text = ''
+    OR s.code = sqlc.arg('sport_code')::text
   )
   AND (
-    sqlc.arg(league_name) = ''
-    OR l.name ILIKE '%' || sqlc.arg(league_name) || '%'
+    sqlc.arg('league_name')::text = ''
+    OR l.name ILIKE '%' || sqlc.arg('league_name')::text || '%'
   )
   AND (
-    sqlc.arg(status) = ''
-    OR e.status = sqlc.arg(status)
+    sqlc.arg('status')::text = ''
+    OR e.status = sqlc.arg('status')::text
   );
 
 -- name: GetEventsByTeam :many
@@ -267,11 +267,11 @@ FROM
   LEFT JOIN leagues l ON e.league_id = l.id
 WHERE
   (
-    e.home_team_id = sqlc.arg(team_id)
-    OR e.away_team_id = sqlc.arg(team_id)
+    e.home_team_id = sqlc.arg('team_id')::int
+    OR e.away_team_id = sqlc.arg('team_id')::int
   )
-  AND e.event_date >= sqlc.arg(since_date)
+  AND e.event_date >= sqlc.arg('since_date')::timestamp
 ORDER BY
   e.event_date DESC
 LIMIT
-  sqlc.arg(limit_count);
+  sqlc.arg('limit_count')::int;

@@ -16,12 +16,10 @@ WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: UpsertTeam :one
-INSERT INTO teams (external_id, name, country, logo_url)
-VALUES (sqlc.arg(external_id), sqlc.arg(name), sqlc.arg(country), sqlc.arg(logo_url))
+INSERT INTO teams (external_id, name)
+VALUES (sqlc.arg('external_id')::text, sqlc.arg('name')::text)
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
-    country = EXCLUDED.country,
-    logo_url = EXCLUDED.logo_url,
     updated_at = CURRENT_TIMESTAMP
 RETURNING *;
 

@@ -152,7 +152,7 @@ func (c *IddaaClient) GetEvents(sportID int) (*models.IddaaEventsResponse, error
 	}
 
 	if !result.IsSuccess {
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed for GetEvents: %s", result.Message)
 	}
 
 	return &result, nil

@@ -151,7 +151,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	events := h.convertEventsToResponse(dbEvents)
 
 	// Calculate pagination metadata
-	totalPages := int((totalCount + int64(perPage) - 1) / int64(perPage)) // Ceiling division
+	totalPages := int((int64(totalCount) + int64(perPage) - 1) / int64(perPage)) // Ceiling division
 	hasNext := page < totalPages
 	hasPrevious := page > 1
 
@@ -179,7 +179,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		Str("status", status).
 		Int("page", page).
 		Int("per_page", perPage).
-		Int64("total", totalCount).
+		Int("total", int(totalCount)).
 		Int("count", len(events)).
 		Msg("Returning paginated events")
 

@@ -13,7 +13,7 @@ import (
 type Querier interface {
 	// Analyze correlation between volume and odds movement
 	AnalyzeVolumeOddsPattern(ctx context.Context) ([]byte, error)
-	CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int64, error)
+	CountEventsFiltered(ctx context.Context, arg CountEventsFilteredParams) (int32, error)
 	CreateConfig(ctx context.Context, arg CreateConfigParams) (AppConfig, error)
 	CreateDistributionHistory(ctx context.Context, arg CreateDistributionHistoryParams) (OutcomeDistributionHistory, error)
 	CreateEnhancedLeagueMapping(ctx context.Context, arg CreateEnhancedLeagueMappingParams) (LeagueMapping, error)
@@ -36,8 +36,9 @@ type Querier interface {
 	GetAlertsByUser(ctx context.Context, arg GetAlertsByUserParams) ([]GetAlertsByUserRow, error)
 	GetBigMovers(ctx context.Context, arg GetBigMoversParams) ([]GetBigMoversRow, error)
 	GetContrarianBets(ctx context.Context) ([]ContrarianBet, error)
-	GetCurrentOdds(ctx context.Context, eventID pgtype.Int4) ([]GetCurrentOddsRow, error)
+	GetCurrentOdds(ctx context.Context, eventID int32) ([]GetCurrentOddsRow, error)
 	GetCurrentOddsByMarket(ctx context.Context, arg GetCurrentOddsByMarketParams) ([]GetCurrentOddsByMarketRow, error)
+	GetCurrentOddsByOutcome(ctx context.Context, arg GetCurrentOddsByOutcomeParams) (GetCurrentOddsByOutcomeRow, error)
 	GetCurrentOddsForOutcome(ctx context.Context, arg GetCurrentOddsForOutcomeParams) ([]CurrentOdd, error)
 	GetDistributionHistory(ctx context.Context, arg GetDistributionHistoryParams) ([]OutcomeDistributionHistory, error)
 	GetEvent(ctx context.Context, id int32) (GetEventRow, error)
@@ -70,7 +71,7 @@ type Querier interface {
 	GetOddsChangesByMarket(ctx context.Context, arg GetOddsChangesByMarketParams) ([]GetOddsChangesByMarketRow, error)
 	// Get full odds history for a specific event
 	GetOddsHistory(ctx context.Context, eventID pgtype.Int4) ([]GetOddsHistoryRow, error)
-	GetOddsHistoryByID(ctx context.Context, id int32) (OddsHistory, error)
+	GetOddsHistoryByID(ctx context.Context, id int64) (OddsHistory, error)
 	GetOddsMovements(ctx context.Context, arg GetOddsMovementsParams) ([]GetOddsMovementsRow, error)
 	GetOutcomeDistribution(ctx context.Context, arg GetOutcomeDistributionParams) (OutcomeDistribution, error)
 	GetPredictionAccuracy(ctx context.Context, sinceDate pgtype.Timestamp) ([]GetPredictionAccuracyRow, error)
@@ -98,7 +99,7 @@ type Querier interface {
 	GetValueSpots(ctx context.Context, arg GetValueSpotsParams) ([]GetValueSpotsRow, error)
 	// Get volume history for a specific event
 	GetVolumeHistory(ctx context.Context, eventID pgtype.Int4) ([]GetVolumeHistoryRow, error)
-	ListEventsByDate(ctx context.Context, eventDate interface{}) ([]ListEventsByDateRow, error)
+	ListEventsByDate(ctx context.Context, eventDate pgtype.Timestamp) ([]ListEventsByDateRow, error)
 	ListEventsFiltered(ctx context.Context, arg ListEventsFilteredParams) ([]ListEventsFilteredRow, error)
 	ListLeagueMappings(ctx context.Context) ([]LeagueMapping, error)
 	ListLeagues(ctx context.Context) ([]League, error)

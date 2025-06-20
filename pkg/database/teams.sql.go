@@ -678,30 +678,21 @@ func (q *Queries) UpdateTeamApiFootballID(ctx context.Context, arg UpdateTeamApi
 }
 
 const upsertTeam = `-- name: UpsertTeam :one
-INSERT INTO teams (external_id, name, country, logo_url)
-VALUES ($1, $2, $3, $4)
+INSERT INTO teams (external_id, name)
+VALUES ($1::text, $2::text)
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
-    country = EXCLUDED.country,
-    logo_url = EXCLUDED.logo_url,
     updated_at = CURRENT_TIMESTAMP
 RETURNING id, external_id, name, country, logo_url, is_active, slug, api_football_id, team_code, founded_year, is_national_team, venue_id, venue_name, venue_address, venue_city, venue_capacity, venue_surface, venue_image_url, api_enrichment_data, last_api_update, created_at, updated_at
 `
 
 type UpsertTeamParams struct {
-	ExternalID string      `db:"external_id" json:"external_id"`
-	Name       string      `db:"name" json:"name"`
-	Country    pgtype.Text `db:"country" json:"country"`
-	LogoUrl    pgtype.Text `db:"logo_url" json:"logo_url"`
+	ExternalID string `db:"external_id" json:"external_id"`
+	Name       string `db:"name" json:"name"`
 }
 
 func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, error) {
-	row := q.db.QueryRow(ctx, upsertTeam,
-		arg.ExternalID,
-		arg.Name,
-		arg.Country,
-		arg.LogoUrl,
-	)
+	row := q.db.QueryRow(ctx, upsertTeam, arg.ExternalID, arg.Name)
 	var i Team
 	err := row.Scan(
 		&i.ID,

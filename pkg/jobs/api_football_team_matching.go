@@ -327,7 +327,7 @@ func (j *APIFootballTeamMatchingJob) getTeamTranslations(ctx context.Context, te
 
 	// Look up recent events to find league context
 	recentEvents, err := j.db.GetEventsByTeam(ctx, database.GetEventsByTeamParams{
-		TeamID:     pgtype.Int4{Int32: team.ID, Valid: true},
+		TeamID:     team.ID,
 		SinceDate:  pgtype.Timestamp{Time: time.Now().Add(-60 * 24 * time.Hour), Valid: true}, // Look back 60 days
 		LimitCount: 3,                                                                         // Check a few recent events
 	})
