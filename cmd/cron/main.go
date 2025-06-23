@@ -5,20 +5,33 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 
 	"github.com/iddaa-lens/core/internal/config"
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
+	"github.com/iddaa-lens/core/pkg/database/pool"
 	"github.com/iddaa-lens/core/pkg/jobs"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/services"
 )
 
 func main() {
+	// Load .env file if it exists
+	envPath := filepath.Join(".", ".env")
+	if _, err := os.Stat(envPath); err == nil {
+		if err := godotenv.Load(envPath); err != nil {
+			// Log but don't fail - env vars might be set elsewhere
+			logger.New("cron-service").Warn().
+				Err(err).
+				Str("path", envPath).
+				Msg("Failed to load .env file")
+		}
+	}
 	// Parse command line flags
 	var (
 		jobName           = flag.String("job", "", "Run specific job once (config, sports, events, volume, distribution, analytics, market_config, statistics, leagues, detailed_odds, api_football_league_matching, api_football_team_matching, api_football_league_enrichment, api_football_team_enrichment, smart_money_processor)")
@@ -43,23 +56,9 @@ func main() {
 	cfg := config.Load()
 
 	// Connect to database with optimized pool configuration
-	dbConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL())
-	if err != nil {
-		log.Fatal().
-			Err(err).
-			Str("action", "db_config_parse_failed").
-			Msg("Failed to parse database config")
-	}
-
-	// Configure connection pool for better performance
-	dbConfig.MaxConns = 20 // Maximum number of connections
-	dbConfig.MinConns = 5  // Minimum number of connections
-	dbConfig.MaxConnLifetime = time.Hour
-	dbConfig.MaxConnIdleTime = time.Minute * 30
-	dbConfig.HealthCheckPeriod = time.Minute
-	dbConfig.ConnConfig.ConnectTimeout = time.Second * 10
-
-	db, err := pgxpool.NewWithConfig(context.Background(), dbConfig)
+	// Use Azure config for cron to be conservative with connections
+	poolConfig := pool.AzureConfig()
+	db, err := pool.New(context.Background(), cfg.DatabaseURL(), poolConfig)
 	if err != nil {
 		log.Fatal().
 			Err(err).
@@ -69,7 +68,7 @@ func main() {
 	defer db.Close()
 
 	// Initialize services
-	queries := database.New(db)
+	queries := generated.New(db)
 	iddaaClient := services.NewIddaaClient(cfg)
 	configService := services.NewConfigService(queries, iddaaClient)
 	sportsService := services.NewSportService(queries, iddaaClient)
@@ -157,8 +156,8 @@ func main() {
 		log.Fatalf("Failed to register detailed odds sync job: %v", err)
 	}
 
-	// Register API-Football league matching job (independent of Iddaa sync)
-	apiFootballLeagueMatchingJob := jobs.NewAPIFootballLeagueMatchingJob(queries)
+	// Register API-Football league matching job (optimized version)
+	apiFootballLeagueMatchingJob := jobs.NewAPIFootballLeagueMatchingJobV2(queries)
 	if err := jobManager.RegisterJob(apiFootballLeagueMatchingJob); err != nil {
 		log.Fatalf("Failed to register API-Football league matching job: %v", err)
 	}
@@ -189,7 +188,7 @@ func main() {
 
 	// Handle single job execution
 	if *once && *jobName != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 
 		// Find the job by name from registered jobs

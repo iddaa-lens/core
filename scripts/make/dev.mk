@@ -13,6 +13,10 @@ deps: ## Download dependencies
 	go mod tidy
 
 sqlc: ## Generate sqlc code
+	echo "Generating SQL code with sqlc..."
+	echo "Deleting old generated code..."
+	rm -rf pkg/database/generated
+	echo "Running sqlc generate..."
 	sqlc generate
 
 # Docker targets
@@ -38,13 +42,13 @@ docker-clean: ## Clean up Docker resources
 # Cron testing targets
 test-cron-competitions: ## Test competitions sync job once
 	docker compose up -d postgres
-	@echo "Waiting for database..."
+	@echo "Waiting for generated..."
 	@until docker compose exec postgres pg_isready -U iddaa -d iddaa_core >/dev/null 2>&1; do sleep 1; done
 	docker compose run --rm cron ./cron --job=competitions --once
 
 test-cron-config: ## Test config sync job once  
 	docker compose up -d postgres
-	@echo "Waiting for database..."
+	@echo "Waiting for generated..."
 	@until docker compose exec postgres pg_isready -U iddaa -d iddaa_core >/dev/null 2>&1; do sleep 1; done
 	docker compose run --rm cron ./cron --job=config --once
 

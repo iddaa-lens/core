@@ -209,8 +209,8 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 // APIResponse represents the standard API-Football response structure
 type APIResponse struct {
 	Get        string                   `json:"get"`
-	Parameters map[string]interface{}   `json:"parameters"`
-	Errors     interface{}              `json:"errors"`
+	Parameters map[string]any           `json:"parameters"`
+	Errors     any                      `json:"errors"`
 	Results    int                      `json:"results"`
 	Paging     models.FootballAPIPaging `json:"paging"`
 	Response   json.RawMessage          `json:"response"`
@@ -223,9 +223,9 @@ func (r *APIResponse) HasErrors() bool {
 	}
 
 	switch errors := r.Errors.(type) {
-	case []interface{}:
+	case []any:
 		return len(errors) > 0
-	case map[string]interface{}:
+	case map[string]any:
 		return len(errors) > 0
 	case string:
 		return errors != ""
@@ -242,13 +242,13 @@ func (r *APIResponse) GetErrorMessages() []string {
 
 	var messages []string
 	switch errors := r.Errors.(type) {
-	case []interface{}:
+	case []any:
 		for _, err := range errors {
 			if errStr, ok := err.(string); ok {
 				messages = append(messages, errStr)
 			}
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range errors {
 			if valueStr, ok := value.(string); ok {
 				messages = append(messages, fmt.Sprintf("%s: %s", key, valueStr))

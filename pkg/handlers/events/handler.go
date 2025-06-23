@@ -8,20 +8,21 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models/api"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Handler handles event-related requests
 type Handler struct {
-	queries *database.Queries
+	queries *generated.Queries
 	logger  *logger.Logger
 }
 
 // NewHandler creates a new events handler
-func NewHandler(queries *database.Queries, log *logger.Logger) *Handler {
+func NewHandler(queries *generated.Queries, log *logger.Logger) *Handler {
 	return &Handler{
 		queries: queries,
 		logger:  log,
@@ -106,7 +107,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// First, get the total count for pagination
-	countParams := database.CountEventsFilteredParams{
+	countParams := generated.CountEventsFilteredParams{
 		TimeAfter:  timeAfter,
 		TimeBefore: timeBefore,
 		SportCode:  sportCode,
@@ -126,7 +127,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query database for events with pagination
-	params := database.ListEventsFilteredParams{
+	params := generated.ListEventsFilteredParams{
 		TimeAfter:   timeAfter,
 		TimeBefore:  timeBefore,
 		SportCode:   sportCode,
@@ -303,7 +304,7 @@ func (h *Handler) ListNonPaginated(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query database for events (no pagination)
-	params := database.ListEventsFilteredParams{
+	params := generated.ListEventsFilteredParams{
 		TimeAfter:   timeAfter,
 		TimeBefore:  timeBefore,
 		SportCode:   sportCode,
@@ -361,7 +362,7 @@ func (h *Handler) Live(w http.ResponseWriter, r *http.Request) {
 }
 
 // convertEventsToResponse converts database events to API response format
-func (h *Handler) convertEventsToResponse(dbEvents []database.ListEventsFilteredRow) []api.EventResponse {
+func (h *Handler) convertEventsToResponse(dbEvents []generated.ListEventsFilteredRow) []api.EventResponse {
 	var events []api.EventResponse
 	for _, event := range dbEvents {
 		// Get event time
@@ -373,28 +374,35 @@ func (h *Handler) convertEventsToResponse(dbEvents []database.ListEventsFiltered
 		// Create match string
 		match := fmt.Sprintf("%s vs %s", event.HomeTeamName, event.AwayTeamName)
 
+		// Convert betting volume percentage from float32 to float64
+		var bettingVolumePercentage *float64
+		if event.BettingVolumePercentage != nil {
+			volume := float64(*event.BettingVolumePercentage)
+			bettingVolumePercentage = &volume
+		}
+
 		eventResponse := api.EventResponse{
 			ID:                      event.ID,
 			ExternalID:              event.ExternalID,
 			Slug:                    event.Slug,
 			EventDate:               eventTime,
 			Status:                  event.Status,
-			HomeScore:               h.getInt32Ptr(event.HomeScore),
-			AwayScore:               h.getInt32Ptr(event.AwayScore),
-			IsLive:                  event.IsLive.Bool,
-			MinuteOfMatch:           h.getInt32Ptr(event.MinuteOfMatch),
-			Half:                    h.getInt32Ptr(event.Half),
-			BettingVolumePercentage: h.getFloat64Ptr(event.BettingVolumePercentage),
-			VolumeRank:              h.getInt32Ptr(event.VolumeRank),
-			HasKingOdd:              event.HasKingOdd.Bool,
-			OddsCount:               h.getInt32Ptr(event.OddsCount),
-			HasCombine:              event.HasCombine.Bool,
+			HomeScore:               event.HomeScore,
+			AwayScore:               event.AwayScore,
+			IsLive:                  *event.IsLive,
+			MinuteOfMatch:           event.MinuteOfMatch,
+			Half:                    event.Half,
+			BettingVolumePercentage: bettingVolumePercentage,
+			VolumeRank:              event.VolumeRank,
+			HasKingOdd:              *event.HasKingOdd,
+			OddsCount:               event.OddsCount,
+			HasCombine:              *event.HasCombine,
 			HomeTeam:                event.HomeTeamName,
-			HomeTeamCountry:         h.getStringFromText(event.HomeTeamCountry),
+			HomeTeamCountry:         *event.HomeTeamCountry,
 			AwayTeam:                event.AwayTeamName,
-			AwayTeamCountry:         h.getStringFromText(event.AwayTeamCountry),
+			AwayTeamCountry:         *event.AwayTeamCountry,
 			League:                  event.LeagueName,
-			LeagueCountry:           h.getStringFromText(event.LeagueCountry),
+			LeagueCountry:           *event.LeagueCountry,
 			Sport:                   event.SportName,
 			SportCode:               event.SportCode,
 			Match:                   match,
@@ -403,34 +411,4 @@ func (h *Handler) convertEventsToResponse(dbEvents []database.ListEventsFiltered
 		events = append(events, eventResponse)
 	}
 	return events
-}
-
-// Helper function to get string from pgtype.Text
-func (h *Handler) getStringFromText(t pgtype.Text) string {
-	if t.Valid {
-		return t.String
-	}
-	return ""
-}
-
-// Helper function to get int32 pointer from pgtype.Int4
-func (h *Handler) getInt32Ptr(i pgtype.Int4) *int32 {
-	if i.Valid {
-		return &i.Int32
-	}
-	return nil
-}
-
-// Helper function to get float64 pointer from pgtype.Numeric
-func (h *Handler) getFloat64Ptr(n pgtype.Numeric) *float64 {
-	if n.Valid {
-		if val, err := n.Value(); err == nil {
-			if str, ok := val.(string); ok {
-				if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-					return &parsed
-				}
-			}
-		}
-	}
-	return nil
 }

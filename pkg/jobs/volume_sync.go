@@ -3,19 +3,20 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/services"
 )
 
 type VolumeSyncJob struct {
 	volumeService *services.VolumeService
-	db            *database.Queries
+	db            *generated.Queries
 }
 
-func NewVolumeSyncJob(volumeService *services.VolumeService, db *database.Queries) Job {
+func NewVolumeSyncJob(volumeService *services.VolumeService, db *generated.Queries) Job {
 	return &VolumeSyncJob{
 		volumeService: volumeService,
 		db:            db,
@@ -52,42 +53,89 @@ func (j *VolumeSyncJob) Execute(ctx context.Context) error {
 		Int("sport_count", len(sports)).
 		Msg("Found active sports to sync")
 
-	totalProcessed := 0
-	errorCount := 0
-
-	for _, sport := range sports {
-		sportStart := time.Now()
-		log.Debug().
-			Str("action", "sport_sync_start").
-			Str("sport_name", sport.Name).
-			Int("sport_id", int(sport.ID)).
-			Msg("Fetching volume data for sport")
-
-		err := j.volumeService.FetchAndUpdateVolumes(ctx, int(sport.ID))
-		if err != nil {
-			errorCount++
-			log.Error().
-				Err(err).
-				Str("action", "sport_sync_failed").
-				Str("sport_name", sport.Name).
-				Int("sport_id", int(sport.ID)).
-				Dur("duration", time.Since(sportStart)).
-				Msg("Failed to fetch volume data")
-			continue // Continue with other sports
-		}
-
-		log.Debug().
-			Str("action", "sport_sync_complete").
-			Str("sport_name", sport.Name).
-			Int("sport_id", int(sport.ID)).
-			Dur("duration", time.Since(sportStart)).
-			Msg("Volume sync completed for sport")
-		totalProcessed++
-	}
+	// Process sports concurrently
+	totalProcessed, errorCount := j.processSportsConcurrently(ctx, sports)
 
 	duration := time.Since(start)
 	log.LogJobComplete("volume_sync", duration, totalProcessed, errorCount)
 	return nil
+}
+
+// processSportsConcurrently processes multiple sports in parallel with controlled concurrency
+func (j *VolumeSyncJob) processSportsConcurrently(ctx context.Context, sports []generated.Sport) (int, int) {
+	const maxConcurrency = 3 // Process up to 3 sports simultaneously
+
+	type result struct {
+		sportID   int32
+		sportName string
+		err       error
+		duration  time.Duration
+	}
+
+	// Create channels for work distribution
+	workCh := make(chan generated.Sport, len(sports))
+	resultCh := make(chan result, len(sports))
+
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < maxConcurrency; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			for sport := range workCh {
+				start := time.Now()
+				err := j.volumeService.FetchAndUpdateVolumes(ctx, int(sport.ID))
+
+				resultCh <- result{
+					sportID:   sport.ID,
+					sportName: sport.Name,
+					err:       err,
+					duration:  time.Since(start),
+				}
+			}
+		}(i)
+	}
+
+	// Send work to channel
+	go func() {
+		for _, sport := range sports {
+			workCh <- sport
+		}
+		close(workCh)
+	}()
+
+	// Wait for workers to complete
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// Collect results
+	totalProcessed := 0
+	errorCount := 0
+	log := logger.WithContext(ctx, "volume-sync")
+
+	for res := range resultCh {
+		if res.err != nil {
+			errorCount++
+			log.Error().
+				Err(res.err).
+				Str("sport_name", res.sportName).
+				Int32("sport_id", res.sportID).
+				Dur("duration", res.duration).
+				Msg("Failed to sync volume for sport")
+		} else {
+			totalProcessed++
+			log.Debug().
+				Str("sport_name", res.sportName).
+				Int32("sport_id", res.sportID).
+				Dur("duration", res.duration).
+				Msg("Volume sync completed for sport")
+		}
+	}
+
+	return totalProcessed, errorCount
 }
 
 func (j *VolumeSyncJob) Schedule() string {

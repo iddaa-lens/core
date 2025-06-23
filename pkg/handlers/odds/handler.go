@@ -9,20 +9,21 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models/api"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Handler handles odds-related requests
 type Handler struct {
-	queries *database.Queries
+	queries *generated.Queries
 	logger  *logger.Logger
 }
 
 // NewHandler creates a new odds handler
-func NewHandler(queries *database.Queries, log *logger.Logger) *Handler {
+func NewHandler(queries *generated.Queries, log *logger.Logger) *Handler {
 	return &Handler{
 		queries: queries,
 		logger:  log,
@@ -31,120 +32,71 @@ func NewHandler(queries *database.Queries, log *logger.Logger) *Handler {
 
 // BigMovers handles the /api/odds/big-movers endpoint
 func (h *Handler) BigMovers(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	hoursStr := r.URL.Query().Get("hours")
-	if hoursStr == "" {
-		hoursStr = "24"
-	}
-	hours, err := strconv.Atoi(hoursStr)
-	if err != nil || hours < 1 || hours > 168 {
-		hours = 24
+	// Parse query parameters with simple defaults
+	hours := 24
+	if hoursStr := r.URL.Query().Get("hours"); hoursStr != "" {
+		if parsed, err := strconv.Atoi(hoursStr); err == nil && parsed >= 1 && parsed <= 168 {
+			hours = parsed
+		}
 	}
 
-	thresholdStr := r.URL.Query().Get("threshold")
-	if thresholdStr == "" {
-		thresholdStr = "50"
-	}
-	threshold, err := strconv.ParseFloat(thresholdStr, 64)
-	if err != nil || threshold < 0 {
-		threshold = 50
+	threshold := 50.0
+	if thresholdStr := r.URL.Query().Get("threshold"); thresholdStr != "" {
+		if parsed, err := strconv.ParseFloat(thresholdStr, 64); err == nil && parsed >= 0 {
+			threshold = parsed
+		}
 	}
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	// Calculate time range
-	sinceTime := pgtype.Timestamp{
-		Time:  time.Now().Add(-time.Duration(hours) * time.Hour),
-		Valid: true,
-	}
-
-	// Convert threshold to numeric
-	minChangePercentage := pgtype.Numeric{}
-	err = minChangePercentage.Scan(fmt.Sprintf("%.2f", threshold))
-	if err != nil {
-		h.logger.Error().Err(err).Msg("Failed to convert threshold")
-		http.Error(w, "Invalid threshold parameter", http.StatusBadRequest)
-		return
-	}
-
-	// Query database for recent movements
-	params := database.GetRecentMovementsParams{
-		SinceTime:           sinceTime,
-		MinChangePercentage: minChangePercentage,
-		LimitCount:          100, // Limit to 100 results
+	// Query database
+	params := generated.GetRecentMovementsParams{
+		SinceTime: pgtype.Timestamp{
+			Time:  time.Now().Add(-time.Duration(hours) * time.Hour),
+			Valid: true,
+		},
+		MinChangePercentage: threshold,
+		LimitCount:          100,
 	}
 
 	dbMovements, err := h.queries.GetRecentMovements(ctx, params)
 	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Str("action", "query_movements_failed").
-			Msg("Failed to query odds movements")
-
-		// Return empty data when database query fails
-		h.logger.Error().
-			Err(err).
-			Str("action", "returning_empty").
-			Msg("Returning empty data due to database query failure")
-
+		h.logger.Error().Err(err).Msg("Failed to query odds movements")
+		// Return empty array on error
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]api.BigMoverResponse{})
+		if err := json.NewEncoder(w).Encode([]api.BigMoverResponse{}); err != nil {
+			h.logger.Error().Err(err).Msg("Failed to encode empty response")
+		}
 		return
 	}
 
-	// Convert database results to API response
-	var movers []api.BigMoverResponse
-	for _, movement := range dbMovements {
-		// Convert pgtype.Numeric to float64 safely
-		var oddsValue, previousValue, changePercentage, multiplier float64
+	// Convert to API response
+	movers := make([]api.BigMoverResponse, 0, len(dbMovements))
 
-		if movement.OddsValue.Valid {
-			if val, err := movement.OddsValue.Value(); err == nil {
-				if str, ok := val.(string); ok {
-					if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-						oddsValue = parsed
-					}
-				}
-			}
-		}
-		if movement.PreviousValue.Valid {
-			if val, err := movement.PreviousValue.Value(); err == nil {
-				if str, ok := val.(string); ok {
-					if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-						previousValue = parsed
-					}
-				}
-			}
-		}
-		if movement.ChangePercentage.Valid {
-			if val, err := movement.ChangePercentage.Value(); err == nil {
-				if str, ok := val.(string); ok {
-					if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-						changePercentage = parsed
-					}
-				}
-			}
-		}
-		if movement.Multiplier.Valid {
-			if val, err := movement.Multiplier.Value(); err == nil {
-				if str, ok := val.(string); ok {
-					if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-						multiplier = parsed
-					}
-				}
-			}
-		}
-
-		// Skip invalid odds (1.0 or below are usually placeholders/suspended)
-		if oddsValue <= 1.0 || previousValue <= 1.0 {
+	for _, m := range dbMovements {
+		// Skip invalid data
+		if m.OddsValue <= 1.0 || (m.PreviousValue != nil && *m.PreviousValue <= 1.0) {
 			continue
 		}
 
-		// Skip movements that are too small to be meaningful
-		if math.Abs(changePercentage) < 5.0 {
+		// Get change percentage - skip if nil or too small
+		if m.ChangePercentage == nil || math.Abs(float64(*m.ChangePercentage)) < 5.0 {
 			continue
+		}
+
+		// Convert pointers to values with defaults
+		changePercentage := float64(*m.ChangePercentage)
+
+		previousValue := m.OddsValue // default to current if nil
+		if m.PreviousValue != nil {
+			previousValue = *m.PreviousValue
+		}
+
+		multiplier := 1.0
+		if m.Multiplier != nil {
+			multiplier = *m.Multiplier
 		}
 
 		// Determine direction
@@ -153,55 +105,91 @@ func (h *Handler) BigMovers(w http.ResponseWriter, r *http.Request) {
 			direction = "SHORTENING"
 		}
 
-		// Create match string
-		match := fmt.Sprintf("%s vs %s", movement.HomeTeam, movement.AwayTeam)
+		// Convert int32 pointers to int64 pointers for API response
+		var homeScore, awayScore, minuteOfMatch *int64
+		if m.HomeScore != nil {
+			val := int64(*m.HomeScore)
+			homeScore = &val
+		}
+		if m.AwayScore != nil {
+			val := int64(*m.AwayScore)
+			awayScore = &val
+		}
+		if m.MinuteOfMatch != nil {
+			val := int64(*m.MinuteOfMatch)
+			minuteOfMatch = &val
+		}
+
+		// Convert float32 to float64 for betting volume
+		var bettingVolumePercent *float64
+		if m.BettingVolumePercentage != nil {
+			val := float64(*m.BettingVolumePercentage)
+			bettingVolumePercent = &val
+		}
 
 		// Get event time
-		eventTime := time.Now().Add(24 * time.Hour) // Default
-		if movement.EventDate.Valid {
-			eventTime = movement.EventDate.Time
+		eventTime := time.Now().Add(24 * time.Hour) // default
+		if m.EventDate.Valid {
+			eventTime = m.EventDate.Time
+		}
+
+		// Handle nullable strings
+		leagueCountry := ""
+		if m.LeagueCountry != nil {
+			leagueCountry = *m.LeagueCountry
+		}
+
+		marketDescription := ""
+		if m.MarketDescription != nil {
+			marketDescription = *m.MarketDescription
+		}
+
+		homeTeamCountry := ""
+		if m.HomeTeamCountry != nil {
+			homeTeamCountry = *m.HomeTeamCountry
+		}
+
+		awayTeamCountry := ""
+		if m.AwayTeamCountry != nil {
+			awayTeamCountry = *m.AwayTeamCountry
+		}
+
+		isLive := false
+		if m.IsLive != nil {
+			isLive = *m.IsLive
 		}
 
 		mover := api.BigMoverResponse{
-			EventSlug:            movement.EventSlug,
-			Match:                match,
-			Sport:                movement.SportName,
-			SportCode:            movement.SportCode,
-			League:               movement.LeagueName,
-			LeagueCountry:        h.getStringFromText(movement.LeagueCountry),
-			Market:               movement.MarketName,
-			MarketDescription:    h.getStringFromText(movement.MarketDescription),
-			Outcome:              movement.Outcome,
+			EventSlug:            m.EventSlug,
+			Match:                fmt.Sprintf("%s vs %s", m.HomeTeam, m.AwayTeam),
+			Sport:                m.SportName,
+			SportCode:            m.SportCode,
+			League:               m.LeagueName,
+			LeagueCountry:        leagueCountry,
+			Market:               m.MarketName,
+			MarketDescription:    marketDescription,
+			Outcome:              m.Outcome,
 			OpeningOdds:          previousValue,
-			CurrentOdds:          oddsValue,
+			CurrentOdds:          m.OddsValue,
 			ChangePercentage:     changePercentage,
 			Multiplier:           multiplier,
 			Direction:            direction,
-			LastUpdated:          movement.RecordedAt.Time,
+			LastUpdated:          m.RecordedAt.Time,
 			EventTime:            eventTime,
-			EventStatus:          movement.EventStatus,
-			IsLive:               movement.IsLive.Bool,
-			HomeScore:            h.getInt32Ptr(movement.HomeScore),
-			AwayScore:            h.getInt32Ptr(movement.AwayScore),
-			MinuteOfMatch:        h.getInt32Ptr(movement.MinuteOfMatch),
-			BettingVolumePercent: h.getFloat64Ptr(movement.BettingVolumePercentage),
-			HomeTeamCountry:      h.getStringFromText(movement.HomeTeamCountry),
-			AwayTeamCountry:      h.getStringFromText(movement.AwayTeamCountry),
+			EventStatus:          m.EventStatus,
+			IsLive:               isLive,
+			HomeScore:            homeScore,
+			AwayScore:            awayScore,
+			MinuteOfMatch:        minuteOfMatch,
+			BettingVolumePercent: bettingVolumePercent,
+			HomeTeamCountry:      homeTeamCountry,
+			AwayTeamCountry:      awayTeamCountry,
 		}
 
 		movers = append(movers, mover)
 	}
 
-	// Log if no data found
-	if len(movers) == 0 {
-		h.logger.Info().
-			Str("action", "no_data_found").
-			Msg("No recent movements found in the specified time period")
-	}
-
-	// Log response info
 	h.logger.Info().
-		Str("action", "big_movers_response").
 		Int("hours", hours).
 		Float64("threshold", threshold).
 		Int("count", len(movers)).
@@ -212,34 +200,4 @@ func (h *Handler) BigMovers(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
-}
-
-// Helper function to get string from pgtype.Text
-func (h *Handler) getStringFromText(t pgtype.Text) string {
-	if t.Valid {
-		return t.String
-	}
-	return ""
-}
-
-// Helper function to get int32 pointer from pgtype.Int4
-func (h *Handler) getInt32Ptr(i pgtype.Int4) *int32 {
-	if i.Valid {
-		return &i.Int32
-	}
-	return nil
-}
-
-// Helper function to get float64 pointer from pgtype.Numeric
-func (h *Handler) getFloat64Ptr(n pgtype.Numeric) *float64 {
-	if n.Valid {
-		if val, err := n.Value(); err == nil {
-			if str, ok := val.(string); ok {
-				if parsed, err := strconv.ParseFloat(str, 64); err == nil {
-					return &parsed
-				}
-			}
-		}
-	}
-	return nil
 }

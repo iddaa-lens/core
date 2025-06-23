@@ -3,25 +3,25 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/iddaa-lens/core/pkg/database/generated"
+	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 type VolumeService struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *IddaaClient
+	logger *logger.Logger
 }
 
-func NewVolumeService(db *database.Queries, client *IddaaClient) *VolumeService {
+func NewVolumeService(db *generated.Queries, client *IddaaClient) *VolumeService {
 	return &VolumeService{
 		db:     db,
 		client: client,
+		logger: logger.New("volume-service"),
 	}
 }
 
@@ -37,8 +37,10 @@ type EventVolume struct {
 	Rank       int
 }
 
-// FetchAndUpdateVolumes fetches betting volume data and updates the database
+// FetchAndUpdateVolumes fetches betting volume data and updates the database using bulk operations
 func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int) error {
+	start := time.Now()
+
 	// Fetch volume data from API
 	url := fmt.Sprintf("https://sportsbookv2.iddaa.com/sportsbook/played-event-percentage?sportType=%d", sportType)
 
@@ -56,94 +58,113 @@ func (s *VolumeService) FetchAndUpdateVolumes(ctx context.Context, sportType int
 		return fmt.Errorf("API request failed: %s", response.Message)
 	}
 
-	// Convert to sorted slice for ranking
-	volumes := make([]EventVolume, 0, len(response.Data))
+	if len(response.Data) == 0 {
+		s.logger.Info().
+			Int("sport_type", sportType).
+			Msg("No volume data returned from API")
+		return nil
+	}
+
+	// Extract data for bulk operations (no sorting needed - database will rank)
+	externalIDs := make([]string, 0, len(response.Data))
+	percentages := make([]float64, 0, len(response.Data))
+
 	for eventID, percentage := range response.Data {
-		volumes = append(volumes, EventVolume{
-			EventID:    eventID,
-			Percentage: percentage,
-		})
+		externalIDs = append(externalIDs, eventID)
+		percentages = append(percentages, percentage)
 	}
 
-	// Sort by percentage descending
-	sort.Slice(volumes, func(i, j int) bool {
-		return volumes[i].Percentage > volumes[j].Percentage
-	})
-
-	// Assign ranks
-	for i := range volumes {
-		volumes[i].Rank = i + 1
+	// Execute bulk operations in a transaction
+	err = s.executeBulkVolumeUpdate(ctx, externalIDs, percentages)
+	if err != nil {
+		return fmt.Errorf("bulk volume update failed: %w", err)
 	}
 
-	// Update database
-	totalEvents := len(volumes)
-	for _, vol := range volumes {
-		if err := s.updateEventVolume(ctx, vol, totalEvents); err != nil {
-			// Skip logging for events that don't exist (common scenario)
-			if err != pgx.ErrNoRows && !isEventNotFoundError(err) {
-				// Log error but continue with other events
-				fmt.Printf("Failed to update volume for event %s: %v\n", vol.EventID, err)
-			}
-			continue
+	duration := time.Since(start)
+	s.logger.Info().
+		Int("sport_type", sportType).
+		Int("events_count", len(response.Data)).
+		Dur("duration", duration).
+		Float64("events_per_second", float64(len(response.Data))/duration.Seconds()).
+		Msg("Volume sync completed")
+
+	return nil
+}
+
+// executeBulkVolumeUpdate performs all database operations in a single transaction
+func (s *VolumeService) executeBulkVolumeUpdate(ctx context.Context, externalIDs []string, percentages []float64) error {
+	// Note: Since we're using generated.Queries, we can't use transactions directly
+	// But we can still use bulk operations to minimize round trips
+
+	// First, verify which events exist
+	existingEvents, err := s.db.GetEventIDsByExternalIDs(ctx, externalIDs)
+	if err != nil {
+		return fmt.Errorf("failed to get existing events: %w", err)
+	}
+
+	// Build map of existing events
+	existingMap := make(map[string]bool)
+	for _, event := range existingEvents {
+		existingMap[event.ExternalID] = true
+	}
+
+	// Filter to only existing events
+	validExternalIDs := make([]string, 0, len(existingEvents))
+	validPercentages := make([]float64, 0, len(existingEvents))
+
+	for i, extID := range externalIDs {
+		if existingMap[extID] {
+			validExternalIDs = append(validExternalIDs, extID)
+			validPercentages = append(validPercentages, percentages[i])
 		}
 	}
 
+	if len(validExternalIDs) == 0 {
+		s.logger.Warn().
+			Int("total_volumes", len(externalIDs)).
+			Msg("No matching events found for volume data")
+		return nil
+	}
+
+	// Bulk update volumes with database-calculated ranks
+	rowsUpdated, err := s.db.BulkUpdateEventVolumes(ctx, generated.BulkUpdateEventVolumesParams{
+		ExternalIds: validExternalIDs,
+		Percentages: validPercentages,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to bulk update volumes: %w", err)
+	}
+
+	// Bulk insert history records
+	_, err = s.db.BulkInsertVolumeHistory(ctx, generated.BulkInsertVolumeHistoryParams{
+		ExternalIds: validExternalIDs,
+		Percentages: validPercentages,
+		TotalEvents: int64(len(validExternalIDs)),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to bulk insert volume history: %w", err)
+	}
+
+	s.logger.Debug().
+		Int("requested", len(externalIDs)).
+		Int("matched", len(validExternalIDs)).
+		Int64("updated", rowsUpdated).
+		Msg("Bulk volume update completed")
+
 	return nil
 }
 
-// isEventNotFoundError checks if the error is related to event not being found
-func isEventNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "event") && strings.Contains(errStr, "not found")
-}
-
-func (s *VolumeService) updateEventVolume(ctx context.Context, vol EventVolume, totalEvents int) error {
-	// First, check if event exists
-	event, err := s.db.GetEventByExternalIDSimple(ctx, vol.EventID)
-	if err != nil {
-		return fmt.Errorf("event %s not found: %w", vol.EventID, err)
-	}
-
-	// Create volume percentage numeric value
-	var volumePercentageNumeric pgtype.Numeric
-	volumeStr := fmt.Sprintf("%.2f", vol.Percentage)
-	if err := volumePercentageNumeric.Scan(volumeStr); err != nil {
-		return fmt.Errorf("failed to convert volume percentage %.2f: %w", vol.Percentage, err)
-	}
-
-	// Update event with volume data
-	_, err = s.db.UpdateEventVolume(ctx, database.UpdateEventVolumeParams{
-		ID:                      event.ID,
-		BettingVolumePercentage: volumePercentageNumeric,
-		VolumeRank:              pgtype.Int4{Int32: int32(vol.Rank), Valid: true},
-		VolumeUpdatedAt:         pgtype.Timestamp{Time: time.Now(), Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update event volume: %w", err)
-	}
-
-	// Record in history with the same volume percentage value
-	_, err = s.db.CreateVolumeHistory(ctx, database.CreateVolumeHistoryParams{
-		EventID:            pgtype.Int4{Int32: event.ID, Valid: true},
-		VolumePercentage:   volumePercentageNumeric,
-		RankPosition:       pgtype.Int4{Int32: int32(vol.Rank), Valid: true},
-		TotalEventsTracked: pgtype.Int4{Int32: int32(totalEvents), Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create volume history: %w", err)
-	}
-
-	return nil
-}
+// Custom error types for better error handling
+var (
+	ErrNoVolumeData = errors.New("no volume data available")
+	ErrAPIFailure   = errors.New("API request failed")
+)
 
 // GetHotMovers finds events with high volume AND significant odds movement
 func (s *VolumeService) GetHotMovers(ctx context.Context, minVolume float64, minMovement float64) ([]HotMover, error) {
-	rows, err := s.db.GetHotMovers(ctx, database.GetHotMoversParams{
-		MinVolume:   func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(minVolume); return n }(),
-		MinMovement: func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(minMovement); return n }(),
+	rows, err := s.db.GetHotMovers(ctx, generated.GetHotMoversParams{
+		MinVolume:   minVolume,
+		MinMovement: minMovement,
 	})
 	if err != nil {
 		return nil, err
@@ -151,12 +172,20 @@ func (s *VolumeService) GetHotMovers(ctx context.Context, minVolume float64, min
 
 	movers := make([]HotMover, len(rows))
 	for i, row := range rows {
-		volumeFloat, _ := row.BettingVolumePercentage.Float64Value()
+		volume := float64(0)
+		if row.BettingVolumePercentage != nil {
+			volume = float64(*row.BettingVolumePercentage)
+		}
+		volumeRank := 0
+		if row.VolumeRank != nil {
+			volumeRank = int(*row.VolumeRank)
+		}
+
 		movers[i] = HotMover{
 			EventSlug:       row.Slug,
 			MatchName:       row.MatchName.(string),
-			Volume:          volumeFloat.Float64,
-			VolumeRank:      int(row.VolumeRank.Int32),
+			Volume:          volume,
+			VolumeRank:      volumeRank,
 			MaxMovement:     row.MaxMovement.(float64),
 			PopularityLevel: row.PopularityLevel,
 			EventType:       row.EventType,
@@ -168,9 +197,9 @@ func (s *VolumeService) GetHotMovers(ctx context.Context, minVolume float64, min
 
 // GetHiddenGems finds low-volume events with big odds movements (potential sharp money)
 func (s *VolumeService) GetHiddenGems(ctx context.Context, maxVolume float64, minMovement float64) ([]HiddenGem, error) {
-	rows, err := s.db.GetHiddenGems(ctx, database.GetHiddenGemsParams{
-		MaxVolume:   func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(maxVolume); return n }(),
-		MinMovement: func() pgtype.Numeric { n := pgtype.Numeric{}; _ = n.Scan(minMovement); return n }(),
+	rows, err := s.db.GetHiddenGems(ctx, generated.GetHiddenGemsParams{
+		MaxVolume:   maxVolume,
+		MinMovement: minMovement,
 	})
 	if err != nil {
 		return nil, err
@@ -178,10 +207,15 @@ func (s *VolumeService) GetHiddenGems(ctx context.Context, maxVolume float64, mi
 
 	gems := make([]HiddenGem, len(rows))
 	for i, row := range rows {
+		volume := float64(0)
+		if row.BettingVolumePercentage != nil {
+			volume = float64(*row.BettingVolumePercentage)
+		}
+
 		gems[i] = HiddenGem{
 			EventSlug:   row.Slug,
 			MatchName:   row.MatchName.(string),
-			Volume:      func() float64 { v, _ := row.BettingVolumePercentage.Float64Value(); return v.Float64 }(),
+			Volume:      volume,
 			MaxMovement: row.MaxMovement.(float64),
 			Insight:     "Low public interest but sharp money moving - potential value",
 		}

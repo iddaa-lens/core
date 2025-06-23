@@ -4,23 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/iddaa-lens/core/pkg/database/generated"
+	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 type DistributionService struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *IddaaClient
+	logger *logger.Logger
 }
 
-func NewDistributionService(db *database.Queries, client *IddaaClient) *DistributionService {
+func NewDistributionService(db *generated.Queries, client *IddaaClient) *DistributionService {
 	return &DistributionService{
 		db:     db,
 		client: client,
+		logger: logger.New("distribution-service"),
 	}
+}
+
+// FlatDistribution represents a single distribution entry for bulk processing
+type FlatDistribution struct {
+	EventExternalID    string
+	MarketID           int32
+	Outcome            string
+	BetPercentage      float32
+	ImpliedProbability float64
+	// For history tracking
+	PreviousPercentage *float32
+	HasChanged         bool
 }
 
 type OutcomeDistributionResponse struct {
@@ -29,8 +44,10 @@ type OutcomeDistributionResponse struct {
 	Message   string                                   `json:"message"`
 }
 
-// FetchAndUpdateDistributions fetches outcome betting distribution data
+// FetchAndUpdateDistributions fetches outcome betting distribution data using bulk operations
 func (s *DistributionService) FetchAndUpdateDistributions(ctx context.Context, sportType int) error {
+	start := time.Now()
+
 	url := fmt.Sprintf("https://sportsbookv2.iddaa.com/sportsbook/outcome-play-percentages?sportType=%d", sportType)
 
 	data, err := s.client.FetchData(url)
@@ -47,224 +64,266 @@ func (s *DistributionService) FetchAndUpdateDistributions(ctx context.Context, s
 		return fmt.Errorf("API request failed: %s", response.Message)
 	}
 
-	// Process each event
-	for eventIDStr, markets := range response.Data {
-		eventID, err := strconv.Atoi(eventIDStr)
-		if err != nil {
-			fmt.Printf("Invalid event ID %s: %v\n", eventIDStr, err)
-			continue
-		}
-
-		// Check if event exists in our database
-		event, err := s.db.GetEventByExternalIDSimple(ctx, eventIDStr)
-		if err != nil {
-			// Event not found, skip
-			continue
-		}
-
-		// Process each market for this event
-		for marketIDStr, outcomes := range markets {
-			marketID, err := strconv.Atoi(marketIDStr)
-			if err != nil {
-				fmt.Printf("Invalid market ID %s: %v\n", marketIDStr, err)
-				continue
-			}
-
-			// Process each outcome
-			for outcome, percentage := range outcomes {
-				err := s.updateOutcomeDistribution(ctx, event.ID, marketID, outcome, percentage)
-				if err != nil {
-					fmt.Printf("Failed to update distribution for event %d, market %d, outcome %s: %v\n",
-						eventID, marketID, outcome, err)
-				}
-			}
-		}
+	if len(response.Data) == 0 {
+		s.logger.Info().
+			Int("sport_type", sportType).
+			Msg("No distribution data returned from API")
+		return nil
 	}
+
+	// Step 1: Flatten the nested structure into a slice for easier processing
+	flatDistributions := s.flattenDistributions(response.Data)
+	if len(flatDistributions) == 0 {
+		return nil
+	}
+
+	// Step 2: Execute bulk operations
+	err = s.executeBulkDistributionUpdate(ctx, flatDistributions)
+	if err != nil {
+		return fmt.Errorf("bulk distribution update failed: %w", err)
+	}
+
+	duration := time.Since(start)
+	s.logger.Info().
+		Int("sport_type", sportType).
+		Int("events_count", len(response.Data)).
+		Int("distributions_count", len(flatDistributions)).
+		Dur("duration", duration).
+		Float64("distributions_per_second", float64(len(flatDistributions))/duration.Seconds()).
+		Msg("Distribution sync completed")
 
 	return nil
 }
 
-func (s *DistributionService) updateOutcomeDistribution(ctx context.Context, eventID int32, marketID int, outcome string, percentage float64) error {
-	// Get current distribution if exists
-	current, err := s.db.GetOutcomeDistribution(ctx, database.GetOutcomeDistributionParams{
-		EventID:  pgtype.Int4{Int32: eventID, Valid: true},
-		MarketID: int32(marketID),
-		Outcome:  outcome,
-	})
-
-	var previousPercentage pgtype.Numeric
-	if err == nil {
-		// Record exists, track the change
-		currentFloat, _ := current.BetPercentage.Float64Value()
-		previousPercentage = pgtype.Numeric{}
-		prevStr := fmt.Sprintf("%.2f", currentFloat.Float64)
-		if err := previousPercentage.Scan(prevStr); err != nil {
-			return fmt.Errorf("failed to convert previous percentage %.2f: %w", currentFloat.Float64, err)
+// flattenDistributions converts nested map structure to flat slice
+func (s *DistributionService) flattenDistributions(data map[string]map[string]map[string]float64) []FlatDistribution {
+	// Pre-calculate capacity to avoid reallocations
+	capacity := 0
+	for _, markets := range data {
+		for _, outcomes := range markets {
+			capacity += len(outcomes)
 		}
+	}
 
-		// Record history if percentage changed
-		if currentFloat.Float64 != percentage {
-			newPercentageHist := pgtype.Numeric{}
-			newStr := fmt.Sprintf("%.2f", percentage)
-			if err := newPercentageHist.Scan(newStr); err != nil {
-				return fmt.Errorf("failed to convert new percentage %.2f: %w", percentage, err)
-			}
+	distributions := make([]FlatDistribution, 0, capacity)
 
-			_, err = s.db.CreateDistributionHistory(ctx, database.CreateDistributionHistoryParams{
-				EventID:            pgtype.Int4{Int32: eventID, Valid: true},
-				MarketID:           int32(marketID),
-				Outcome:            outcome,
-				BetPercentage:      newPercentageHist,
-				PreviousPercentage: previousPercentage,
-			})
+	// Flatten the structure - maintaining order is critical here
+	for eventIDStr, markets := range data {
+		for marketIDStr, outcomes := range markets {
+			marketID, err := strconv.Atoi(marketIDStr)
 			if err != nil {
-				return fmt.Errorf("failed to create distribution history: %w", err)
+				s.logger.Warn().
+					Str("market_id", marketIDStr).
+					Err(err).
+					Msg("Invalid market ID, skipping")
+				continue
+			}
+
+			for outcome, percentage := range outcomes {
+				distributions = append(distributions, FlatDistribution{
+					EventExternalID:    eventIDStr,
+					MarketID:           int32(marketID),
+					Outcome:            outcome,
+					BetPercentage:      float32(percentage),
+					ImpliedProbability: 0, // Will be calculated later
+				})
 			}
 		}
 	}
 
-	// Calculate implied probability from current odds
-	impliedProb, err := s.getImpliedProbability(ctx, eventID, outcome)
-	if err != nil {
-		impliedProb = pgtype.Numeric{Valid: false}
-	}
-
-	// Upsert the distribution
-	newPercentage := pgtype.Numeric{}
-	percentageStr := fmt.Sprintf("%.2f", percentage)
-	if err := newPercentage.Scan(percentageStr); err != nil {
-		return fmt.Errorf("failed to convert percentage %.2f: %w", percentage, err)
-	}
-
-	_, err = s.db.UpsertOutcomeDistribution(ctx, database.UpsertOutcomeDistributionParams{
-		EventID:            pgtype.Int4{Int32: eventID, Valid: true},
-		MarketID:           int32(marketID),
-		Outcome:            outcome,
-		BetPercentage:      newPercentage,
-		ImpliedProbability: impliedProb,
-	})
-
-	return err
+	return distributions
 }
 
-func (s *DistributionService) getImpliedProbability(ctx context.Context, eventID int32, outcome string) (pgtype.Numeric, error) {
-	// Get current odds for this outcome
-	odds, err := s.db.GetCurrentOddsForOutcome(ctx, database.GetCurrentOddsForOutcomeParams{
-		EventID: pgtype.Int4{Int32: eventID, Valid: true},
-		Outcome: outcome,
-	})
-	if err != nil {
-		return pgtype.Numeric{Valid: false}, err
-	}
-
-	if len(odds) == 0 {
-		return pgtype.Numeric{Valid: false}, nil
-	}
-
-	// Convert odds to implied probability
-	// Implied probability = 1 / decimal_odds * 100
-	oddsFloat, err := odds[0].OddsValue.Float64Value()
-	if err != nil || !oddsFloat.Valid || oddsFloat.Float64 <= 0 {
-		return pgtype.Numeric{Valid: false}, nil
-	}
-
-	impliedProb := (1.0 / oddsFloat.Float64) * 100
-	result := pgtype.Numeric{}
-	impliedStr := fmt.Sprintf("%.2f", impliedProb)
-	if err := result.Scan(impliedStr); err != nil {
-		return pgtype.Numeric{Valid: false}, fmt.Errorf("failed to convert implied probability %.2f: %w", impliedProb, err)
-	}
-	return result, nil
-}
-
-// GetValueBets finds outcomes where public betting doesn't match implied probabilities
-func (s *DistributionService) GetValueBets(ctx context.Context, minBias float64) ([]ValueBet, error) {
-	// Get outcome distributions where public betting percentage significantly differs from implied probability
-	distributions, err := s.db.GetEventBettingPatterns(ctx, pgtype.Int4{Valid: false}) // Get all events
-	if err != nil {
-		return nil, fmt.Errorf("failed to get betting patterns: %w", err)
-	}
-
-	var valueBets []ValueBet
-
+// executeBulkDistributionUpdate performs all database operations efficiently
+func (s *DistributionService) executeBulkDistributionUpdate(ctx context.Context, distributions []FlatDistribution) error {
+	// Step 1: Extract unique event IDs and bulk fetch existing events
+	eventIDMap := make(map[string]bool)
 	for _, dist := range distributions {
-		// Bias is int32, convert to float for comparison
-		bias := float64(dist.Bias)
+		eventIDMap[dist.EventExternalID] = true
+	}
 
-		// Look for value where public overweights (positive bias above threshold)
-		if bias >= minBias {
-			oddsFloat := 0.0
-			if dist.OddsValue.Valid {
-				if oddsVal, err := dist.OddsValue.Float64Value(); err == nil && oddsVal.Valid {
-					oddsFloat = oddsVal.Float64
-				}
-			}
+	eventIDs := make([]string, 0, len(eventIDMap))
+	for id := range eventIDMap {
+		eventIDs = append(eventIDs, id)
+	}
 
-			betPctFloat := 0.0
-			if dist.BetPercentage.Valid {
-				if betPct, err := dist.BetPercentage.Float64Value(); err == nil && betPct.Valid {
-					betPctFloat = betPct.Float64
-				}
-			}
+	// Bulk fetch events
+	events, err := s.db.GetEventsByExternalIDs(ctx, eventIDs)
+	if err != nil {
+		return fmt.Errorf("failed to fetch events: %w", err)
+	}
 
-			impliedProbFloat := 0.0
-			if dist.ImpliedProbability.Valid {
-				if impliedProb, err := dist.ImpliedProbability.Float64Value(); err == nil && impliedProb.Valid {
-					impliedProbFloat = impliedProb.Float64
-				}
-			}
+	// Create event lookup map
+	eventMap := make(map[string]int32)
+	for _, event := range events {
+		eventMap[event.ExternalID] = event.ID
+	}
 
-			// Create value bet with proper field names
-			valueBet := ValueBet{
-				EventSlug:          fmt.Sprintf("market-%d-%s", dist.MarketID, dist.Outcome),
-				MatchName:          "Event Analysis",
-				EventDate:          time.Now(),
-				MarketName:         fmt.Sprintf("Market %d", dist.MarketID),
-				Outcome:            dist.Outcome,
-				CurrentOdds:        oddsFloat,
-				ImpliedProbability: fmt.Sprintf("%.2f%%", impliedProbFloat),
-				PublicBetPercent:   fmt.Sprintf("%.2f%%", betPctFloat),
-				BiasPercentage:     bias,
-				BetAssessment:      "VALUE", // Indicates this is a value bet
-			}
-
-			valueBets = append(valueBets, valueBet)
+	// Step 2: Filter distributions to only those with valid events
+	validDistributions := make([]FlatDistribution, 0, len(distributions))
+	for _, dist := range distributions {
+		if _, exists := eventMap[dist.EventExternalID]; exists {
+			validDistributions = append(validDistributions, dist)
 		}
 	}
 
-	return valueBets, nil
-}
-
-// GetContrarianOpportunities finds heavily backed favorites to fade
-func (s *DistributionService) GetContrarianOpportunities(ctx context.Context) ([]ContrarianBet, error) {
-	// Refresh materialized view first
-	err := s.db.RefreshContrarianBets(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to refresh contrarian bets: %w", err)
+	if len(validDistributions) == 0 {
+		s.logger.Warn().
+			Int("total_distributions", len(distributions)).
+			Int("valid_events", len(eventMap)).
+			Msg("No valid distributions after filtering")
+		return nil
 	}
 
-	rows, err := s.db.GetContrarianBets(ctx)
+	// Step 3: Bulk fetch current distributions for comparison
+	currentDistributions, err := s.db.GetAllDistributionsForEvents(ctx, eventIDs)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to fetch current distributions")
+	}
+
+	// Build lookup map for current distributions
+	type distKey struct {
+		eventExtID string
+		marketID   int32
+		outcome    string
+	}
+	currentMap := make(map[distKey]float32)
+	for _, curr := range currentDistributions {
+		key := distKey{
+			eventExtID: curr.EventExternalID,
+			marketID:   curr.MarketID,
+			outcome:    curr.Outcome,
+		}
+		currentMap[key] = curr.BetPercentage
+	}
+
+	// Step 4: Calculate implied probabilities from odds (bulk fetch)
+	oddsMap, err := s.getImpliedProbabilitiesInBulk(ctx, eventIDs)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to fetch odds for implied probabilities")
+	}
+
+	// Step 5: Identify changes and prepare bulk operations
+	// CRITICAL: Maintain order by using slices, not maps
+	var (
+		// For bulk upsert
+		upsertExtIDs      []string
+		upsertMarketIDs   []int64 // Changed to int64 to match generated code
+		upsertOutcomes    []string
+		upsertPercentages []float64 // Changed to float64 to match generated code
+		upsertImpliedProb []float64
+
+		// For history (only changed values)
+		historyExtIDs      []string
+		historyMarketIDs   []int64 // Changed to int64 to match generated code
+		historyOutcomes    []string
+		historyPercentages []float64 // Changed to float64 to match generated code
+		historyPrevPercent []float64 // Changed to float64 to match generated code
+	)
+
+	const significantChangeThreshold = 0.01 // 0.01% change
+
+	for _, dist := range validDistributions {
+		// Calculate implied probability
+		impliedProb := 0.0
+		if oddsValue, exists := oddsMap[oddsKey{
+			eventExtID: dist.EventExternalID,
+			outcome:    dist.Outcome,
+		}]; exists && oddsValue > 0 {
+			impliedProb = (1.0 / oddsValue) * 100
+		}
+
+		// Always add to upsert arrays
+		upsertExtIDs = append(upsertExtIDs, dist.EventExternalID)
+		upsertMarketIDs = append(upsertMarketIDs, int64(dist.MarketID))
+		upsertOutcomes = append(upsertOutcomes, dist.Outcome)
+		upsertPercentages = append(upsertPercentages, float64(dist.BetPercentage))
+		upsertImpliedProb = append(upsertImpliedProb, impliedProb)
+
+		// Check if this is a change worth recording
+		key := distKey{
+			eventExtID: dist.EventExternalID,
+			marketID:   dist.MarketID,
+			outcome:    dist.Outcome,
+		}
+		if prevPercentage, exists := currentMap[key]; exists {
+			if math.Abs(float64(prevPercentage-dist.BetPercentage)) > significantChangeThreshold {
+				// Add to history arrays
+				historyExtIDs = append(historyExtIDs, dist.EventExternalID)
+				historyMarketIDs = append(historyMarketIDs, int64(dist.MarketID))
+				historyOutcomes = append(historyOutcomes, dist.Outcome)
+				historyPercentages = append(historyPercentages, float64(dist.BetPercentage))
+				historyPrevPercent = append(historyPrevPercent, float64(prevPercentage))
+			}
+		}
+	}
+
+	// Step 6: Execute bulk operations
+	// Bulk upsert distributions
+	if len(upsertExtIDs) > 0 {
+		_, err = s.db.BulkUpsertDistributions(ctx, generated.BulkUpsertDistributionsParams{
+			ExternalIds:          upsertExtIDs,
+			MarketIds:            upsertMarketIDs,
+			Outcomes:             upsertOutcomes,
+			BetPercentages:       upsertPercentages,
+			ImpliedProbabilities: upsertImpliedProb,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to bulk upsert distributions: %w", err)
+		}
+	}
+
+	// Bulk insert history (only if there are changes)
+	if len(historyExtIDs) > 0 {
+		_, err = s.db.BulkInsertDistributionHistory(ctx, generated.BulkInsertDistributionHistoryParams{
+			ExternalIds:         historyExtIDs,
+			MarketIds:           historyMarketIDs,
+			Outcomes:            historyOutcomes,
+			BetPercentages:      historyPercentages,
+			PreviousPercentages: historyPrevPercent,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to bulk insert distribution history: %w", err)
+		}
+	}
+
+	s.logger.Debug().
+		Int("total_distributions", len(distributions)).
+		Int("valid_distributions", len(validDistributions)).
+		Int("upserted", len(upsertExtIDs)).
+		Int("history_records", len(historyExtIDs)).
+		Msg("Bulk distribution update completed")
+
+	return nil
+}
+
+// oddsKey for looking up odds values
+type oddsKey struct {
+	eventExtID string
+	outcome    string
+}
+
+// getImpliedProbabilitiesInBulk fetches odds for all events and returns a lookup map
+func (s *DistributionService) getImpliedProbabilitiesInBulk(ctx context.Context, eventExtIDs []string) (map[oddsKey]float64, error) {
+	odds, err := s.db.GetCurrentOddsForEvents(ctx, eventExtIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	bets := make([]ContrarianBet, len(rows))
-	for i, row := range rows {
-		oddsFloat, _ := row.Odds.Float64Value()
-		bets[i] = ContrarianBet{
-			EventSlug:     row.Slug,
-			MatchName:     row.MatchName.(string),
-			Market:        row.Market.(string),
-			PublicChoice:  row.PublicChoice,
-			PublicBacking: row.PublicBacking.(string),
-			Odds:          oddsFloat.Float64,
-			OverbetBy:     row.OverbetBy.(string),
-			Strategy:      row.Strategy,
+	oddsMap := make(map[oddsKey]float64)
+	for _, odd := range odds {
+		key := oddsKey{
+			eventExtID: odd.ExternalID,
+			outcome:    odd.Outcome,
 		}
+		oddsMap[key] = odd.OddsValue
 	}
 
-	return bets, nil
+	return oddsMap, nil
 }
+
+// Legacy methods kept for compatibility but should not be used
+// Use FetchAndUpdateDistributions instead
 
 type ValueBet struct {
 	EventSlug          string    `json:"event_slug"`

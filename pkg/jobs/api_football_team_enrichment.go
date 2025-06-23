@@ -8,19 +8,18 @@ import (
 	"time"
 
 	"github.com/iddaa-lens/core/pkg/apifootball"
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // APIFootballTeamEnrichmentJob handles team enrichment with API-Football data
 type APIFootballTeamEnrichmentJob struct {
-	db        *database.Queries
+	db        *generated.Queries
 	apiclient *apifootball.Client
 }
 
 // NewAPIFootballTeamEnrichmentJob creates a new API-Football team enrichment job
-func NewAPIFootballTeamEnrichmentJob(db *database.Queries) *APIFootballTeamEnrichmentJob {
+func NewAPIFootballTeamEnrichmentJob(db *generated.Queries) *APIFootballTeamEnrichmentJob {
 	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
 
 	// Create API-Football client
@@ -165,13 +164,13 @@ func (j *APIFootballTeamEnrichmentJob) Execute(ctx context.Context) error {
 }
 
 // getTeamsNeedingEnrichment returns teams that need API-Football enrichment
-func (j *APIFootballTeamEnrichmentJob) getTeamsNeedingEnrichment(ctx context.Context) ([]database.Team, error) {
+func (j *APIFootballTeamEnrichmentJob) getTeamsNeedingEnrichment(ctx context.Context) ([]generated.Team, error) {
 	// Get teams that either have no API enrichment or haven't been updated in 7 days
 	return j.db.GetTeamsNeedingEnrichment(ctx, 50) // Process 50 teams per run
 }
 
 // getAPIFootballIDForTeam gets the API-Football ID for a team from team mappings
-func (j *APIFootballTeamEnrichmentJob) getAPIFootballIDForTeam(ctx context.Context, team database.Team) (int, error) {
+func (j *APIFootballTeamEnrichmentJob) getAPIFootballIDForTeam(ctx context.Context, team generated.Team) (int, error) {
 	// Try to get team mapping
 	mapping, err := j.db.GetTeamMapping(ctx, team.ID)
 	if err != nil {
@@ -183,7 +182,7 @@ func (j *APIFootballTeamEnrichmentJob) getAPIFootballIDForTeam(ctx context.Conte
 }
 
 // enrichTeamData fetches detailed team data from API-Football and updates the database
-func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team database.Team, apiFootballID int) error {
+func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team generated.Team, apiFootballID int) error {
 	// Fetch detailed team data by ID
 	teamData, err := j.apiclient.GetTeamByID(ctx, apiFootballID)
 	if err != nil {
@@ -207,52 +206,53 @@ func (j *APIFootballTeamEnrichmentJob) enrichTeamData(ctx context.Context, team 
 		return fmt.Errorf("failed to marshal enrichment data: %w", err)
 	}
 
-	// Convert values to appropriate pgtype values
-	apiFootballIDPg := pgtype.Int4{Int32: int32(apiFootballID), Valid: true}
+	// Helper functions for creating pointers
+	int32Ptr := func(i int) *int32 {
+		i32 := int32(i)
+		return &i32
+	}
 
-	teamCodePg := pgtype.Text{String: teamData.Team.Code, Valid: teamData.Team.Code != ""}
+	strPtr := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
 
-	var foundedYearPg pgtype.Int4
+	boolPtr := func(b bool) *bool {
+		return &b
+	}
+
+	// Prepare parameters with proper pointer types
+	var foundedYear *int32
 	if teamData.Team.Founded > 0 {
-		foundedYearPg = pgtype.Int4{Int32: int32(teamData.Team.Founded), Valid: true}
+		foundedYear = int32Ptr(teamData.Team.Founded)
 	}
 
-	isNationalPg := pgtype.Bool{Bool: teamData.Team.National, Valid: true}
-
-	var venueIDPg pgtype.Int4
+	var venueID *int32
 	if teamData.Venue.ID > 0 {
-		venueIDPg = pgtype.Int4{Int32: int32(teamData.Venue.ID), Valid: true}
+		venueID = int32Ptr(teamData.Venue.ID)
 	}
 
-	venueNamePg := pgtype.Text{String: teamData.Venue.Name, Valid: teamData.Venue.Name != ""}
-
-	venueAddressPg := pgtype.Text{String: teamData.Venue.Address, Valid: teamData.Venue.Address != ""}
-
-	venueCityPg := pgtype.Text{String: teamData.Venue.City, Valid: teamData.Venue.City != ""}
-
-	var venueCapacityPg pgtype.Int4
+	var venueCapacity *int32
 	if teamData.Venue.Capacity > 0 {
-		venueCapacityPg = pgtype.Int4{Int32: int32(teamData.Venue.Capacity), Valid: true}
+		venueCapacity = int32Ptr(teamData.Venue.Capacity)
 	}
-
-	venueSurfacePg := pgtype.Text{String: teamData.Venue.Surface, Valid: teamData.Venue.Surface != ""}
-
-	venueImagePg := pgtype.Text{String: teamData.Venue.Image, Valid: teamData.Venue.Image != ""}
 
 	// Update team with enrichment data
-	_, err = j.db.EnrichTeamWithAPIFootball(ctx, database.EnrichTeamWithAPIFootballParams{
+	_, err = j.db.EnrichTeamWithAPIFootball(ctx, generated.EnrichTeamWithAPIFootballParams{
 		ID:                team.ID,
-		ApiFootballID:     apiFootballIDPg,
-		TeamCode:          teamCodePg,
-		FoundedYear:       foundedYearPg,
-		IsNationalTeam:    isNationalPg,
-		VenueID:           venueIDPg,
-		VenueName:         venueNamePg,
-		VenueAddress:      venueAddressPg,
-		VenueCity:         venueCityPg,
-		VenueCapacity:     venueCapacityPg,
-		VenueSurface:      venueSurfacePg,
-		VenueImageUrl:     venueImagePg,
+		ApiFootballID:     int32Ptr(apiFootballID),
+		TeamCode:          strPtr(teamData.Team.Code),
+		FoundedYear:       foundedYear,
+		IsNationalTeam:    boolPtr(teamData.Team.National),
+		VenueID:           venueID,
+		VenueName:         strPtr(teamData.Venue.Name),
+		VenueAddress:      strPtr(teamData.Venue.Address),
+		VenueCity:         strPtr(teamData.Venue.City),
+		VenueCapacity:     venueCapacity,
+		VenueSurface:      strPtr(teamData.Venue.Surface),
+		VenueImageUrl:     strPtr(teamData.Venue.Image),
 		ApiEnrichmentData: enrichmentJSON,
 	})
 

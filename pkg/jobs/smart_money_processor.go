@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/services"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,12 +12,12 @@ import (
 
 // SmartMoneyProcessorJob processes odds movements for smart money alerts
 type SmartMoneyProcessorJob struct {
-	queries *database.Queries
+	queries *generated.Queries
 	tracker *services.SmartMoneyTracker
 }
 
 // NewSmartMoneyProcessorJob creates a new smart money processor job
-func NewSmartMoneyProcessorJob(queries *database.Queries, tracker *services.SmartMoneyTracker) *SmartMoneyProcessorJob {
+func NewSmartMoneyProcessorJob(queries *generated.Queries, tracker *services.SmartMoneyTracker) *SmartMoneyProcessorJob {
 	return &SmartMoneyProcessorJob{
 		queries: queries,
 		tracker: tracker,
@@ -49,15 +49,10 @@ func (j *SmartMoneyProcessorJob) Execute(ctx context.Context) error {
 
 	// Get recent odds history records (last 2 minutes to catch new movements)
 	since := time.Now().Add(-2 * time.Minute)
-	var minChangePct pgtype.Numeric
-	if err := minChangePct.Scan("5.0"); err != nil {
-		log.Error().Err(err).Msg("Failed to scan minimum change percentage")
-		return err
-	}
 
-	recentMovements, err := j.queries.GetRecentOddsHistory(ctx, database.GetRecentOddsHistoryParams{
+	recentMovements, err := j.queries.GetRecentOddsHistory(ctx, generated.GetRecentOddsHistoryParams{
 		SinceTime:    pgtype.Timestamp{Time: since, Valid: true},
-		MinChangePct: minChangePct,
+		MinChangePct: 5.0, // 5% minimum change
 		LimitCount:   100, // Process up to 100 movements per run
 	})
 
@@ -88,11 +83,8 @@ func (j *SmartMoneyProcessorJob) Execute(ctx context.Context) error {
 		processedCount++
 
 		// Count as alert created if movement was significant enough
-		if movement.ChangePercentage.Valid {
-			changeFloat, _ := movement.ChangePercentage.Float64Value()
-			if changeFloat.Valid && changeFloat.Float64 >= 20.0 {
-				alertsCreated++
-			}
+		if movement.ChangePercentage != nil && *movement.ChangePercentage >= 20.0 {
+			alertsCreated++
 		}
 	}
 

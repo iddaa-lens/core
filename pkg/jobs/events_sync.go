@@ -62,7 +62,7 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 			Int("sport_id", int(sport.ID)).
 			Msg("Fetching events for sport")
 
-		// Fetch live events from iddaa API for this sport using type=1
+		// Fetch all events from iddaa API for this sport using type=0
 		response, err := j.iddaaClient.GetEvents(int(sport.ID))
 		if err != nil {
 			errorCount++
@@ -71,9 +71,16 @@ func (j *EventsSyncJob) Execute(ctx context.Context) error {
 				Str("action", "fetch_failed").
 				Str("sport_name", sport.Name).
 				Int("sport_id", int(sport.ID)).
-				Msg("Failed to fetch live events")
+				Msg("Failed to fetch events")
 			continue // Continue with other sports
 		}
+
+		log.Debug().
+			Str("action", "api_response_received").
+			Str("sport_name", sport.Name).
+			Int("sport_id", int(sport.ID)).
+			Bool("success", response.IsSuccess).
+			Msg("Received API response, starting processing")
 
 		// Process and store the events
 		if err := j.eventsService.ProcessEventsResponse(ctx, response); err != nil {

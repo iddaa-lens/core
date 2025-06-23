@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/iddaa-lens/core/pkg/apifootball"
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
 	"github.com/iddaa-lens/core/pkg/services"
@@ -18,13 +17,13 @@ import (
 
 // APIFootballTeamMatchingJob handles team matching with API-Football
 type APIFootballTeamMatchingJob struct {
-	db        *database.Queries
+	db        *generated.Queries
 	matcher   *services.TeamLeagueMatcher
 	apiclient *apifootball.Client
 }
 
 // NewAPIFootballTeamMatchingJob creates a new API-Football team matching job
-func NewAPIFootballTeamMatchingJob(db *database.Queries) *APIFootballTeamMatchingJob {
+func NewAPIFootballTeamMatchingJob(db *generated.Queries) *APIFootballTeamMatchingJob {
 	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 
@@ -150,12 +149,12 @@ func (j *APIFootballTeamMatchingJob) Execute(ctx context.Context) error {
 }
 
 // getMappedLeagues returns all league mappings
-func (j *APIFootballTeamMatchingJob) getMappedLeagues(ctx context.Context) ([]database.LeagueMapping, error) {
+func (j *APIFootballTeamMatchingJob) getMappedLeagues(ctx context.Context) ([]generated.LeagueMapping, error) {
 	return j.db.ListLeagueMappings(ctx)
 }
 
 // processTeamsForLeague processes all teams for a specific league mapping
-func (j *APIFootballTeamMatchingJob) processTeamsForLeague(ctx context.Context, mapping database.LeagueMapping) (int, int, error) {
+func (j *APIFootballTeamMatchingJob) processTeamsForLeague(ctx context.Context, mapping generated.LeagueMapping) (int, int, error) {
 	// Get internal teams for this league
 	internalTeams, err := j.getTeamsForLeague(ctx, mapping.InternalLeagueID)
 	if err != nil {
@@ -211,8 +210,9 @@ func (j *APIFootballTeamMatchingJob) processTeamsForLeague(ctx context.Context, 
 }
 
 // getTeamsForLeague returns all teams for a specific league
-func (j *APIFootballTeamMatchingJob) getTeamsForLeague(ctx context.Context, leagueID int32) ([]database.Team, error) {
-	return j.db.ListTeamsByLeague(ctx, pgtype.Int4{Int32: leagueID, Valid: true})
+func (j *APIFootballTeamMatchingJob) getTeamsForLeague(ctx context.Context, leagueID int32) ([]generated.Team, error) {
+	leagueIDPtr := &leagueID
+	return j.db.ListTeamsByLeagueID(ctx, leagueIDPtr)
 }
 
 // fetchAPIFootballTeams fetches teams for a specific league from API-Football
@@ -244,7 +244,7 @@ func (j *APIFootballTeamMatchingJob) fetchAPIFootballTeams(ctx context.Context, 
 }
 
 // storeTeamMapping stores a team mapping in the database
-func (j *APIFootballTeamMatchingJob) storeTeamMapping(ctx context.Context, team database.Team, match *services.MatchCandidate) error {
+func (j *APIFootballTeamMatchingJob) storeTeamMapping(ctx context.Context, team generated.Team, match *services.MatchCandidate) error {
 	// Get English translations for storage
 	translations, err := j.getTeamTranslations(ctx, team)
 	if err != nil {
@@ -258,7 +258,7 @@ func (j *APIFootballTeamMatchingJob) storeTeamMapping(ctx context.Context, team 
 		"original_name":      team.Name,
 		"translated_name":    translations.TeamName,
 		"matched_name":       match.Name,
-		"original_country":   team.Country.String,
+		"original_country":   team.Country,
 		"translated_country": translations.Country,
 		"matched_country":    match.Country,
 		"timestamp":          time.Now().UTC(),
@@ -272,43 +272,55 @@ func (j *APIFootballTeamMatchingJob) storeTeamMapping(ctx context.Context, team 
 	// Determine if this mapping needs review
 	needsReview := match.Confidence < 0.85
 
-	// Convert Go types to pgtype
-	var confidenceNumeric pgtype.Numeric
-	if err := confidenceNumeric.Scan(strconv.FormatFloat(match.Confidence, 'f', 4, 64)); err != nil {
-		return fmt.Errorf("failed to convert confidence to numeric: %w", err)
+	// Helper functions for creating pointers
+	strPtr := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return &s
 	}
 
-	var matchScoreNumeric pgtype.Numeric
-	if err := matchScoreNumeric.Scan(strconv.FormatFloat(match.Confidence, 'f', 4, 64)); err != nil {
-		return fmt.Errorf("failed to convert match score to numeric: %w", err)
+	boolPtr := func(b bool) *bool {
+		return &b
+	}
+
+	float32Ptr := func(f float64) *float32 {
+		f32 := float32(f)
+		return &f32
 	}
 
 	// Store the mapping using the enhanced parameters
-	_, err = j.db.CreateEnhancedTeamMapping(ctx, database.CreateEnhancedTeamMappingParams{
+	_, err = j.db.CreateEnhancedTeamMapping(ctx, generated.CreateEnhancedTeamMappingParams{
 		InternalTeamID:       int32(team.ID),
 		FootballApiTeamID:    int32(match.ID),
-		Confidence:           confidenceNumeric,
+		Confidence:           float32(match.Confidence),
 		MappingMethod:        match.Method,
-		TranslatedTeamName:   pgtype.Text{String: translations.TeamName, Valid: translations.TeamName != ""},
-		TranslatedCountry:    pgtype.Text{String: translations.Country, Valid: translations.Country != ""},
-		TranslatedLeague:     pgtype.Text{String: translations.League, Valid: translations.League != ""},
-		OriginalTeamName:     pgtype.Text{String: team.Name, Valid: true},
-		OriginalCountry:      pgtype.Text{String: team.Country.String, Valid: team.Country.Valid},
-		OriginalLeague:       pgtype.Text{String: translations.League, Valid: translations.League != ""}, // League from team context or empty
+		TranslatedTeamName:   strPtr(translations.TeamName),
+		TranslatedCountry:    strPtr(translations.Country),
+		TranslatedLeague:     strPtr(translations.League),
+		OriginalTeamName:     &team.Name,
+		OriginalCountry:      team.Country,
+		OriginalLeague:       strPtr(translations.League), // League from team context or empty
 		MatchFactors:         matchFactorsJSON,
-		NeedsReview:          pgtype.Bool{Bool: needsReview, Valid: true},
-		AiTranslationUsed:    pgtype.Bool{Bool: j.matcher.UsesAI(), Valid: true},
-		NormalizationApplied: pgtype.Bool{Bool: true, Valid: true}, // We always apply normalization
-		MatchScore:           matchScoreNumeric,
+		NeedsReview:          &needsReview,
+		AiTranslationUsed:    boolPtr(j.matcher.UsesAI()),
+		NormalizationApplied: boolPtr(true), // We always apply normalization
+		MatchScore:           float32Ptr(match.Confidence),
 	})
 
 	return err
 }
 
 // getTeamTranslations gets English translations for a team
-func (j *APIFootballTeamMatchingJob) getTeamTranslations(ctx context.Context, team database.Team) (*services.TeamTranslations, error) {
+func (j *APIFootballTeamMatchingJob) getTeamTranslations(ctx context.Context, team generated.Team) (*services.TeamTranslations, error) {
+	// Get country value for translation
+	countryStr := ""
+	if team.Country != nil {
+		countryStr = *team.Country
+	}
+
 	// Translate team name
-	teamName, err := j.matcher.GetTeamNameWithAI(ctx, team.Name, team.Country.String)
+	teamName, err := j.matcher.GetTeamNameWithAI(ctx, team.Name, countryStr)
 	if err != nil {
 		// Fallback to basic translation
 		teamName = team.Name
@@ -316,30 +328,33 @@ func (j *APIFootballTeamMatchingJob) getTeamTranslations(ctx context.Context, te
 
 	// Translate country
 	country := ""
-	if team.Country.Valid {
+	if team.Country != nil && *team.Country != "" {
 		// Use the enhanced translator's country mapping
 		enhancedTranslator := services.NewEnhancedTranslator(os.Getenv("OPENAI_API_KEY"))
-		country = enhancedTranslator.TranslateCountryName(team.Country.String)
+		country = enhancedTranslator.TranslateCountryName(*team.Country)
 	}
 
 	// Get league name from team's recent event participation
 	league := ""
 
 	// Look up recent events to find league context
-	recentEvents, err := j.db.GetEventsByTeam(ctx, database.GetEventsByTeamParams{
+	recentEvents, err := j.db.GetEventsByTeam(ctx, generated.GetEventsByTeamParams{
 		TeamID:     team.ID,
 		SinceDate:  pgtype.Timestamp{Time: time.Now().Add(-60 * 24 * time.Hour), Valid: true}, // Look back 60 days
 		LimitCount: 3,                                                                         // Check a few recent events
 	})
 
 	if err == nil && len(recentEvents) > 0 {
-		// Use league name from the most recent event that has one
+		// Use league ID from the most recent event to look up league name
 		for _, event := range recentEvents {
-			if event.LeagueName.Valid && event.LeagueName.String != "" {
-				// Translate the league name
-				enhancedTranslator := services.NewEnhancedTranslator(os.Getenv("OPENAI_API_KEY"))
-				league, _ = enhancedTranslator.TranslateLeagueName(ctx, event.LeagueName.String, country)
-				break
+			if event.LeagueID != nil {
+				// Get league details
+				if leagueData, err := j.db.GetLeague(ctx, *event.LeagueID); err == nil {
+					// Translate the league name
+					enhancedTranslator := services.NewEnhancedTranslator(os.Getenv("OPENAI_API_KEY"))
+					league, _ = enhancedTranslator.TranslateLeagueName(ctx, leagueData.Name, country)
+					break
+				}
 			}
 		}
 	}

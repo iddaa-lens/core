@@ -18,22 +18,26 @@ sudo mv migrate /usr/local/bin/
 ## Usage
 
 ### Create a new migration
+
 ```bash
 migrate create -ext sql -dir migrations -seq migration_name
 ```
 
 ### Run migrations
+
 ```bash
 export DATABASE_URL="postgres://user:password@localhost:5432/iddaa_core?sslmode=disable"
 migrate -path migrations -database $DATABASE_URL up
 ```
 
 ### Rollback migrations
+
 ```bash
 migrate -path migrations -database $DATABASE_URL down 1
 ```
 
 ### Check migration status
+
 ```bash
 migrate -path migrations -database $DATABASE_URL version
 ```

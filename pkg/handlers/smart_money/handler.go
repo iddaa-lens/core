@@ -8,22 +8,23 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models/api"
 	"github.com/iddaa-lens/core/pkg/services"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Handler handles smart money tracker API endpoints
 type Handler struct {
-	queries *database.Queries
+	queries *generated.Queries
 	tracker *services.SmartMoneyTracker
 	logger  *logger.Logger
 }
 
 // NewHandler creates a new smart money tracker handler
-func NewHandler(queries *database.Queries, tracker *services.SmartMoneyTracker) *Handler {
+func NewHandler(queries *generated.Queries, tracker *services.SmartMoneyTracker) *Handler {
 	return &Handler{
 		queries: queries,
 		tracker: tracker,
@@ -61,29 +62,29 @@ type BigMoverData struct {
 func (h *Handler) GetBigMovers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse query parameters
-	hoursBack := 24 // default
+	// Parse query parameters with simple defaults
+	hoursBack := 24
 	if h := r.URL.Query().Get("hours"); h != "" {
 		if parsed, err := strconv.Atoi(h); err == nil && parsed > 0 && parsed <= 168 {
 			hoursBack = parsed
 		}
 	}
 
-	minChangePercent := 20.0 // default
+	minChangePercent := 20.0
 	if p := r.URL.Query().Get("min_change"); p != "" {
 		if parsed, err := strconv.ParseFloat(p, 64); err == nil && parsed >= 5.0 {
 			minChangePercent = parsed
 		}
 	}
 
-	minMultiplier := 2.0 // default
+	minMultiplier := 2.0
 	if m := r.URL.Query().Get("min_multiplier"); m != "" {
 		if parsed, err := strconv.ParseFloat(m, 64); err == nil && parsed >= 1.1 {
 			minMultiplier = parsed
 		}
 	}
 
-	limit := 50 // default
+	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
 			limit = parsed
@@ -92,19 +93,10 @@ func (h *Handler) GetBigMovers(w http.ResponseWriter, r *http.Request) {
 
 	// Get big movers from database
 	since := time.Now().Add(-time.Duration(hoursBack) * time.Hour)
-	var minChangePctNumeric, minMultiplierNumeric pgtype.Numeric
-	if err := minChangePctNumeric.Scan(fmt.Sprintf("%.2f", minChangePercent)); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min change percentage")
-		return
-	}
-	if err := minMultiplierNumeric.Scan(fmt.Sprintf("%.2f", minMultiplier)); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min multiplier")
-		return
-	}
 
-	bigMovers, err := h.queries.GetRecentBigMovers(ctx, database.GetRecentBigMoversParams{
-		MinChangePct:  minChangePctNumeric,
-		MinMultiplier: minMultiplierNumeric,
+	bigMovers, err := h.queries.GetRecentBigMovers(ctx, generated.GetRecentBigMoversParams{
+		MinChangePct:  minChangePercent,
+		MinMultiplier: minMultiplier,
 		SinceTime:     pgtype.Timestamp{Time: since, Valid: true},
 		LimitCount:    int32(limit),
 	})
@@ -116,60 +108,59 @@ func (h *Handler) GetBigMovers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert database records to response format
-	movements := make([]BigMoverData, len(bigMovers))
-	for i, mover := range bigMovers {
+	movements := make([]BigMoverData, 0, len(bigMovers))
+
+	for _, mover := range bigMovers {
+		// Handle nullable fields with defaults
 		changePercent := 0.0
-		if mover.ChangePercentage.Valid {
-			if changeFloat, err := mover.ChangePercentage.Float64Value(); err == nil && changeFloat.Valid {
-				changePercent = changeFloat.Float64
-			}
+		if mover.ChangePercentage != nil {
+			changePercent = float64(*mover.ChangePercentage)
 		}
 
 		multiplier := 1.0
-		if mover.Multiplier.Valid {
-			if multiplierFloat, err := mover.Multiplier.Float64Value(); err == nil && multiplierFloat.Valid {
-				multiplier = multiplierFloat.Float64
-			}
+		if mover.Multiplier != nil {
+			multiplier = *mover.Multiplier
 		}
 
-		previousOdds := 0.0
-		if mover.PreviousValue.Valid {
-			if prevFloat, err := mover.PreviousValue.Float64Value(); err == nil && prevFloat.Valid {
-				previousOdds = prevFloat.Float64
-			}
-		}
-
-		currentOdds := 0.0
-		if mover.OddsValue.Valid {
-			if currentFloat, err := mover.OddsValue.Float64Value(); err == nil && currentFloat.Valid {
-				currentOdds = currentFloat.Float64
-			}
+		previousOdds := mover.OddsValue // default to current
+		if mover.PreviousValue != nil {
+			previousOdds = *mover.PreviousValue
 		}
 
 		homeTeam := "TBD"
-		if mover.HomeTeamName.Valid {
-			homeTeam = mover.HomeTeamName.String
+		if mover.HomeTeamName != nil {
+			homeTeam = *mover.HomeTeamName
 		}
 
 		awayTeam := "TBD"
-		if mover.AwayTeamName.Valid {
-			awayTeam = mover.AwayTeamName.String
+		if mover.AwayTeamName != nil {
+			awayTeam = *mover.AwayTeamName
 		}
 
-		movements[i] = BigMoverData{
+		eventID := 0
+		if mover.EventID != nil {
+			eventID = int(*mover.EventID)
+		}
+
+		isLive := false
+		if mover.IsLive != nil {
+			isLive = *mover.IsLive
+		}
+
+		movement := BigMoverData{
 			ID:              int64(mover.ID),
-			EventID:         int(mover.EventID.Int32),
+			EventID:         eventID,
 			EventExternalID: mover.EventExternalID,
 			HomeTeam:        homeTeam,
 			AwayTeam:        awayTeam,
 			MarketName:      mover.MarketName,
 			Outcome:         mover.Outcome,
 			PreviousOdds:    previousOdds,
-			CurrentOdds:     currentOdds,
+			CurrentOdds:     mover.OddsValue,
 			ChangePercent:   changePercent,
 			Multiplier:      multiplier,
 			RecordedAt:      mover.RecordedAt.Time,
-			IsLive:          mover.IsLive.Bool,
+			IsLive:          isLive,
 			AlertMessage:    fmt.Sprintf("%.1f%% movement (%.2fx)", changePercent, multiplier),
 		}
 
@@ -177,9 +168,11 @@ func (h *Handler) GetBigMovers(w http.ResponseWriter, r *http.Request) {
 		if mover.EventDate.Valid {
 			minutesToKickoff := time.Until(mover.EventDate.Time).Minutes()
 			if minutesToKickoff > 0 {
-				movements[i].MinutesToKickoff = int(minutesToKickoff)
+				movement.MinutesToKickoff = int(minutesToKickoff)
 			}
 		}
+
+		movements = append(movements, movement)
 	}
 
 	response := BigMoversResponse{
@@ -194,6 +187,7 @@ func (h *Handler) GetBigMovers(w http.ResponseWriter, r *http.Request) {
 		Data:    response,
 		Message: "Big movers retrieved successfully",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -212,9 +206,9 @@ type AlertData struct {
 	Severity         string    `json:"severity"`
 	Title            string    `json:"title"`
 	Message          string    `json:"message"`
-	ChangePercent    float64   `json:"change_percent"`
+	ChangePercent    float32   `json:"change_percent"`
 	Multiplier       float64   `json:"multiplier"`
-	ConfidenceScore  float64   `json:"confidence_score"`
+	ConfidenceScore  float32   `json:"confidence_score"`
 	MinutesToKickoff int       `json:"minutes_to_kickoff"`
 	EventExternalID  string    `json:"event_external_id"`
 	HomeTeam         string    `json:"home_team"`
@@ -232,10 +226,10 @@ func (h *Handler) GetAlerts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse query parameters
-	alertType := r.URL.Query().Get("type")       // 'big_mover', 'reverse_line', 'sharp_money', 'value_spot'
-	minSeverity := r.URL.Query().Get("severity") // 'low', 'medium', 'high', 'critical'
+	alertType := r.URL.Query().Get("type")
+	minSeverity := r.URL.Query().Get("severity")
 
-	limit := 50 // default
+	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 200 {
 			limit = parsed
@@ -243,31 +237,10 @@ func (h *Handler) GetAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get active alerts from database
-	var alertTypePtr *string
-	if alertType != "" {
-		alertTypePtr = &alertType
-	}
-
-	var minSeverityPtr *string
-	if minSeverity != "" {
-		minSeverityPtr = &minSeverity
-	}
-
-	// Convert pointers to strings for database query
-	alertTypeStr := ""
-	if alertTypePtr != nil {
-		alertTypeStr = *alertTypePtr
-	}
-
-	minSeverityStr := ""
-	if minSeverityPtr != nil {
-		minSeverityStr = *minSeverityPtr
-	}
-
-	alerts, err := h.queries.GetActiveAlerts(ctx, database.GetActiveAlertsParams{
-		AlertType:   alertTypeStr,
-		MinSeverity: minSeverityStr,
-		LimitCount:  int32(limit),
+	alerts, err := h.queries.GetActiveAlerts(ctx, generated.GetActiveAlertsParams{
+		AlertType:   alertType,
+		MinSeverity: minSeverity,
+		LimitCount:  int64(limit),
 	})
 
 	if err != nil {
@@ -277,72 +250,50 @@ func (h *Handler) GetAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert database records to response format
-	alertData := make([]AlertData, len(alerts))
-	for i, alert := range alerts {
-		changePercent := 0.0
-		if alert.ChangePercentage.Valid {
-			if changeFloat, err := alert.ChangePercentage.Float64Value(); err == nil && changeFloat.Valid {
-				changePercent = changeFloat.Float64
-			}
-		}
+	alertData := make([]AlertData, 0, len(alerts))
 
-		multiplier := 1.0
-		if alert.Multiplier.Valid {
-			if multiplierFloat, err := alert.Multiplier.Float64Value(); err == nil && multiplierFloat.Valid {
-				multiplier = multiplierFloat.Float64
-			}
-		}
-
-		confidenceScore := 0.0
-		if alert.ConfidenceScore.Valid {
-			if confFloat, err := alert.ConfidenceScore.Float64Value(); err == nil && confFloat.Valid {
-				confidenceScore = confFloat.Float64
-			}
-		}
-
+	for _, alert := range alerts {
 		minutesToKickoff := 0
-		if alert.MinutesToKickoff.Valid {
-			minutesToKickoff = int(alert.MinutesToKickoff.Int32)
+		if alert.MinutesToKickoff != nil {
+			minutesToKickoff = int(*alert.MinutesToKickoff)
 		}
 
-		alertData[i] = AlertData{
+		homeTeam := ""
+		if alert.HomeTeamName != nil {
+			homeTeam = *alert.HomeTeamName
+		}
+
+		awayTeam := ""
+		if alert.AwayTeamName != nil {
+			awayTeam = *alert.AwayTeamName
+		}
+
+		alertData = append(alertData, AlertData{
 			ID:               int64(alert.ID),
 			AlertType:        alert.AlertType,
 			Severity:         alert.Severity,
 			Title:            alert.Title,
 			Message:          alert.Message,
-			ChangePercent:    changePercent,
-			Multiplier:       multiplier,
-			ConfidenceScore:  confidenceScore,
+			ChangePercent:    alert.ChangePercentage,
+			Multiplier:       alert.Multiplier,
+			ConfidenceScore:  alert.ConfidenceScore,
 			MinutesToKickoff: minutesToKickoff,
 			EventExternalID:  alert.EventExternalID,
-			HomeTeam:         alert.HomeTeamName.String,
-			AwayTeam:         alert.AwayTeamName.String,
+			HomeTeam:         homeTeam,
+			AwayTeam:         awayTeam,
 			MarketName:       alert.MarketName,
 			Outcome:          alert.Outcome,
 			CreatedAt:        alert.CreatedAt.Time,
 			ExpiresAt:        alert.ExpiresAt.Time,
-			Views: func() int {
-				if alert.Views.Valid {
-					return int(alert.Views.Int32)
-				} else {
-					return 0
-				}
-			}(),
-			Clicks: func() int {
-				if alert.Clicks.Valid {
-					return int(alert.Clicks.Int32)
-				} else {
-					return 0
-				}
-			}(),
-		}
+			Views:            int(alert.Views),
+			Clicks:           int(alert.Clicks),
+		})
 	}
 
 	response := AlertsResponse{
 		Alerts:  alertData,
 		Total:   len(alertData),
-		HasMore: len(alertData) == limit, // Simple pagination check
+		HasMore: len(alertData) == limit,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -351,6 +302,7 @@ func (h *Handler) GetAlerts(w http.ResponseWriter, r *http.Request) {
 		Data:    response,
 		Message: "Alerts retrieved successfully",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -384,14 +336,14 @@ func (h *Handler) GetValueSpots(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse query parameters
-	minBias := 10.0 // default minimum public bias percentage
+	minBias := 10.0
 	if b := r.URL.Query().Get("min_bias"); b != "" {
 		if parsed, err := strconv.ParseFloat(b, 64); err == nil && parsed >= 5.0 {
 			minBias = parsed
 		}
 	}
 
-	limit := 30 // default
+	limit := 30
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
 			limit = parsed
@@ -399,24 +351,13 @@ func (h *Handler) GetValueSpots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get value spots from database
-	since := time.Now().Add(-24 * time.Hour) // Last 24 hours
-	var minBiasNumeric, minMovementNumeric pgtype.Numeric
-	if err := minBiasNumeric.Scan(fmt.Sprintf("%.2f", minBias)); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min bias")
-		http.Error(w, "Invalid bias parameter", http.StatusBadRequest)
-		return
-	}
-	if err := minMovementNumeric.Scan("5.0"); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min movement")
-		http.Error(w, "Invalid movement parameter", http.StatusBadRequest)
-		return
-	}
+	since := time.Now().Add(-24 * time.Hour)
 
-	valueSpots, err := h.queries.GetValueSpots(ctx, database.GetValueSpotsParams{
+	valueSpots, err := h.queries.GetValueSpots(ctx, generated.GetValueSpotsParams{
 		SinceTime:      pgtype.Timestamp{Time: since, Valid: true},
-		MinBiasPct:     minBiasNumeric,
-		MinMovementPct: minMovementNumeric,
-		LimitCount:     int32(limit),
+		MinBiasPct:     minBias,
+		MinMovementPct: 5.0,
+		LimitCount:     int64(limit),
 	})
 
 	if err != nil {
@@ -426,66 +367,56 @@ func (h *Handler) GetValueSpots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert database records to response format
-	valueSpotData := make([]ValueSpotData, len(valueSpots))
-	for i, spot := range valueSpots {
-		currentOdds := 0.0
-		if spot.OddsValue.Valid {
-			if oddsFloat, err := spot.OddsValue.Float64Value(); err == nil && oddsFloat.Valid {
-				currentOdds = oddsFloat.Float64
-			}
-		}
+	valueSpotData := make([]ValueSpotData, 0, len(valueSpots))
 
+	for _, spot := range valueSpots {
 		impliedProb := 0.0
-		if spot.ImpliedProbability.Valid {
-			if impliedFloat, err := spot.ImpliedProbability.Float64Value(); err == nil && impliedFloat.Valid {
-				impliedProb = impliedFloat.Float64
-			}
+		if spot.ImpliedProbability != nil {
+			impliedProb = float64(*spot.ImpliedProbability)
 		}
 
 		publicPercent := 0.0
-		if spot.BetPercentage.Valid {
-			if publicFloat, err := spot.BetPercentage.Float64Value(); err == nil && publicFloat.Valid {
-				publicPercent = publicFloat.Float64
-			}
+		if spot.BetPercentage != nil {
+			publicPercent = float64(*spot.BetPercentage)
 		}
 
 		publicBias := float64(spot.PublicBias)
 
-		valueSpotData[i] = ValueSpotData{
+		homeTeam := "TBD"
+		if spot.HomeTeamName != nil {
+			homeTeam = *spot.HomeTeamName
+		}
+
+		awayTeam := "TBD"
+		if spot.AwayTeamName != nil {
+			awayTeam = *spot.AwayTeamName
+		}
+
+		valueSpot := ValueSpotData{
 			ID:              int64(spot.ID),
 			EventExternalID: spot.EventExternalID,
-			HomeTeam: func() string {
-				if spot.HomeTeamName.Valid {
-					return spot.HomeTeamName.String
-				} else {
-					return "TBD"
-				}
-			}(),
-			AwayTeam: func() string {
-				if spot.AwayTeamName.Valid {
-					return spot.AwayTeamName.String
-				} else {
-					return "TBD"
-				}
-			}(),
-			MarketName:    spot.MarketName,
-			Outcome:       spot.Outcome,
-			CurrentOdds:   currentOdds,
-			ImpliedProb:   impliedProb,
-			PublicPercent: publicPercent,
-			PublicBias:    publicBias,
-			ValueScore:    publicBias, // Use bias as value score
-			RecordedAt:    spot.RecordedAt.Time,
-			AlertMessage:  fmt.Sprintf("%.1f%% public bias - potential value", publicBias),
+			HomeTeam:        homeTeam,
+			AwayTeam:        awayTeam,
+			MarketName:      spot.MarketName,
+			Outcome:         spot.Outcome,
+			CurrentOdds:     spot.OddsValue,
+			ImpliedProb:     impliedProb,
+			PublicPercent:   publicPercent,
+			PublicBias:      publicBias,
+			ValueScore:      publicBias,
+			RecordedAt:      spot.RecordedAt.Time,
+			AlertMessage:    fmt.Sprintf("%.1f%% public bias - potential value", publicBias),
 		}
 
 		// Calculate minutes to kickoff
 		if spot.EventDate.Valid {
 			minutesToKickoff := time.Until(spot.EventDate.Time).Minutes()
 			if minutesToKickoff > 0 {
-				valueSpotData[i].MinutesToKickoff = int(minutesToKickoff)
+				valueSpot.MinutesToKickoff = int(minutesToKickoff)
 			}
 		}
+
+		valueSpotData = append(valueSpotData, valueSpot)
 	}
 
 	response := ValueSpotsResponse{
@@ -499,6 +430,7 @@ func (h *Handler) GetValueSpots(w http.ResponseWriter, r *http.Request) {
 		Data:    response,
 		Message: "Value spots retrieved successfully",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -508,7 +440,7 @@ func (h *Handler) MarkAlertViewed(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract alert ID from URL path
-	alertIDStr := path.Base(path.Dir(r.URL.Path)) // Gets {id} from /alerts/{id}/view
+	alertIDStr := path.Base(path.Dir(r.URL.Path))
 	alertID, err := strconv.ParseInt(alertIDStr, 10, 32)
 	if err != nil {
 		http.Error(w, "Invalid alert ID", http.StatusBadRequest)
@@ -516,8 +448,7 @@ func (h *Handler) MarkAlertViewed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mark alert as viewed in database
-	err = h.queries.MarkAlertViewed(ctx, int32(alertID))
-	if err != nil {
+	if err := h.queries.MarkAlertViewed(ctx, int32(alertID)); err != nil {
 		h.logger.Error().Err(err).Int64("alert_id", alertID).Msg("Failed to mark alert as viewed")
 		http.Error(w, "Failed to mark alert as viewed", http.StatusInternalServerError)
 		return
@@ -528,6 +459,7 @@ func (h *Handler) MarkAlertViewed(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Alert marked as viewed",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -537,7 +469,7 @@ func (h *Handler) MarkAlertClicked(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract alert ID from URL path
-	alertIDStr := path.Base(path.Dir(r.URL.Path)) // Gets {id} from /alerts/{id}/click
+	alertIDStr := path.Base(path.Dir(r.URL.Path))
 	alertID, err := strconv.ParseInt(alertIDStr, 10, 32)
 	if err != nil {
 		http.Error(w, "Invalid alert ID", http.StatusBadRequest)
@@ -545,8 +477,7 @@ func (h *Handler) MarkAlertClicked(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mark alert as clicked in database
-	err = h.queries.MarkAlertClicked(ctx, int32(alertID))
-	if err != nil {
+	if err := h.queries.MarkAlertClicked(ctx, int32(alertID)); err != nil {
 		h.logger.Error().Err(err).Int64("alert_id", alertID).Msg("Failed to mark alert as clicked")
 		http.Error(w, "Failed to mark alert as clicked", http.StatusInternalServerError)
 		return
@@ -557,6 +488,7 @@ func (h *Handler) MarkAlertClicked(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Alert marked as clicked",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -587,99 +519,76 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	since24h := time.Now().Add(-24 * time.Hour)
 
 	// Get active alerts count
-	activeAlerts, err := h.queries.GetActiveAlerts(ctx, database.GetActiveAlertsParams{
+	activeAlerts, err := h.queries.GetActiveAlerts(ctx, generated.GetActiveAlertsParams{
 		AlertType:   "",
 		MinSeverity: "",
-		LimitCount:  5, // Top 5 for dashboard
+		LimitCount:  5,
 	})
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to get active alerts for dashboard")
-		activeAlerts = []database.GetActiveAlertsRow{} // Continue with empty data
+		activeAlerts = []generated.GetActiveAlertsRow{}
 	}
 
 	// Get recent big movers
-	var minChangePctNumeric, minMultiplierNumeric pgtype.Numeric
-	var bigMovers []database.GetRecentBigMoversRow
-
-	if err := minChangePctNumeric.Scan("20.0"); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min change percentage")
-		bigMovers = []database.GetRecentBigMoversRow{} // Continue with empty data
-	} else if err := minMultiplierNumeric.Scan("2.0"); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min multiplier")
-		bigMovers = []database.GetRecentBigMoversRow{} // Continue with empty data
-	} else {
-		bigMovers, err = h.queries.GetRecentBigMovers(ctx, database.GetRecentBigMoversParams{
-			MinChangePct:  minChangePctNumeric,
-			MinMultiplier: minMultiplierNumeric,
-			SinceTime:     pgtype.Timestamp{Time: since24h, Valid: true},
-			LimitCount:    5, // Top 5 for dashboard
-		})
-		if err != nil {
-			h.logger.Error().Err(err).Msg("Failed to get big movers for dashboard")
-			bigMovers = []database.GetRecentBigMoversRow{} // Continue with empty data
-		}
+	bigMovers, err := h.queries.GetRecentBigMovers(ctx, generated.GetRecentBigMoversParams{
+		MinChangePct:  20.0,
+		MinMultiplier: 2.0,
+		SinceTime:     pgtype.Timestamp{Time: since24h, Valid: true},
+		LimitCount:    5,
+	})
+	if err != nil {
+		h.logger.Error().Err(err).Msg("Failed to get big movers for dashboard")
+		bigMovers = []generated.GetRecentBigMoversRow{}
 	}
 
 	// Get value spots
-	var minBiasNumeric, minMovementNumeric pgtype.Numeric
-	var valueSpots []database.GetValueSpotsRow
-
-	if err := minBiasNumeric.Scan("10.0"); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min bias")
-		valueSpots = []database.GetValueSpotsRow{} // Continue with empty data
-	} else if err := minMovementNumeric.Scan("5.0"); err != nil {
-		h.logger.Error().Err(err).Msg("Failed to scan min movement")
-		valueSpots = []database.GetValueSpotsRow{} // Continue with empty data
-	} else {
-		valueSpots, err = h.queries.GetValueSpots(ctx, database.GetValueSpotsParams{
-			SinceTime:      pgtype.Timestamp{Time: since24h, Valid: true},
-			MinBiasPct:     minBiasNumeric,
-			MinMovementPct: minMovementNumeric,
-			LimitCount:     5, // Top 5 for dashboard
-		})
-		if err != nil {
-			h.logger.Error().Err(err).Msg("Failed to get value spots for dashboard")
-			valueSpots = []database.GetValueSpotsRow{} // Continue with empty data
-		}
+	valueSpots, err := h.queries.GetValueSpots(ctx, generated.GetValueSpotsParams{
+		SinceTime:      pgtype.Timestamp{Time: since24h, Valid: true},
+		MinBiasPct:     10.0,
+		MinMovementPct: 5.0,
+		LimitCount:     5,
+	})
+	if err != nil {
+		h.logger.Error().Err(err).Msg("Failed to get value spots for dashboard")
+		valueSpots = []generated.GetValueSpotsRow{}
 	}
 
-	// Convert to response format (reusing existing conversion logic)
-	dashboardAlerts := make([]AlertData, len(activeAlerts))
-	for i, alert := range activeAlerts {
-		// Simplified conversion for dashboard
-		dashboardAlerts[i] = AlertData{
+	// Convert to response format - simplified for dashboard
+	dashboardAlerts := make([]AlertData, 0, len(activeAlerts))
+	for _, alert := range activeAlerts {
+		dashboardAlerts = append(dashboardAlerts, AlertData{
 			ID:        int64(alert.ID),
 			AlertType: alert.AlertType,
 			Severity:  alert.Severity,
 			Title:     alert.Title,
 			Message:   alert.Message,
 			CreatedAt: alert.CreatedAt.Time,
-		}
+		})
 	}
 
-	dashboardMovers := make([]BigMoverData, len(bigMovers))
-	for i, mover := range bigMovers {
-		dashboardMovers[i] = BigMoverData{
+	dashboardMovers := make([]BigMoverData, 0, len(bigMovers))
+	for _, mover := range bigMovers {
+		dashboardMovers = append(dashboardMovers, BigMoverData{
 			ID:              int64(mover.ID),
 			EventExternalID: mover.EventExternalID,
 			MarketName:      mover.MarketName,
 			Outcome:         mover.Outcome,
 			RecordedAt:      mover.RecordedAt.Time,
-		}
+		})
 	}
 
-	dashboardValueSpots := make([]ValueSpotData, len(valueSpots))
-	for i, spot := range valueSpots {
-		dashboardValueSpots[i] = ValueSpotData{
+	dashboardValueSpots := make([]ValueSpotData, 0, len(valueSpots))
+	for _, spot := range valueSpots {
+		dashboardValueSpots = append(dashboardValueSpots, ValueSpotData{
 			ID:              int64(spot.ID),
 			EventExternalID: spot.EventExternalID,
 			MarketName:      spot.MarketName,
 			Outcome:         spot.Outcome,
 			RecordedAt:      spot.RecordedAt.Time,
-		}
+		})
 	}
 
-	// Count reverse movements (alerts with type "reverse_line")
+	// Count reverse movements and sharp money signals
 	reverseMovements := 0
 	sharpMoneySignals := 0
 	for _, alert := range activeAlerts {
@@ -711,6 +620,7 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		Data:    response,
 		Message: "Dashboard data retrieved successfully",
 	}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }

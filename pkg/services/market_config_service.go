@@ -3,20 +3,19 @@ package services
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/gosimple/slug"
+
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
-	"github.com/iddaa-lens/core/pkg/models"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type MarketConfigService struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *IddaaClient
 }
 
-func NewMarketConfigService(db *database.Queries, client *IddaaClient) *MarketConfigService {
+func NewMarketConfigService(db *generated.Queries, client *IddaaClient) *MarketConfigService {
 	return &MarketConfigService{
 		db:     db,
 		client: client,
@@ -44,97 +43,85 @@ func (s *MarketConfigService) SyncMarketConfigs(ctx context.Context) error {
 		Str("action", "configs_fetched").
 		Msg("Fetched market configs from API")
 
-	synced := 0
-	errors := 0
+	// Prepare batch arrays
+	var (
+		codes                  []string
+		names                  []string
+		slugs                  []string
+		descriptions           []string
+		iddaaMarketIDs         []int32
+		isLives                []bool
+		marketTypes            []int32
+		minMarketDefaultValues []int32
+		maxMarketLimitValues   []int32
+		priorities             []int32
+		sportTypes             []int32
+		marketSubTypes         []int32
+		minDefaultValues       []int32
+		maxLimitValues         []int32
+		isActives              []bool
+	)
+
+	// Collect all market configs into arrays
 	for marketKey, config := range resp.Data.Markets {
-		if err := s.saveMarketConfig(ctx, marketKey, config); err != nil {
-			errors++
+		// Use the market key as the code (e.g., "2_821") to match the format used in events processing
+		marketTypeCode := marketKey
+
+		// Generate slug from the Turkish name and make it unique with market key
+		marketSlug := slug.Make(fmt.Sprintf("%s-%s", config.Name, marketKey))
+
+		// Add to arrays
+		codes = append(codes, marketTypeCode)
+		names = append(names, config.Name)
+		slugs = append(slugs, marketSlug)
+		descriptions = append(descriptions, config.Description)
+		iddaaMarketIDs = append(iddaaMarketIDs, int32(config.ID))
+		isLives = append(isLives, config.IsLive)
+		marketTypes = append(marketTypes, int32(config.MarketType))
+		minMarketDefaultValues = append(minMarketDefaultValues, int32(config.MinMarketValue))
+		maxMarketLimitValues = append(maxMarketLimitValues, int32(config.MaxMarketValue))
+		priorities = append(priorities, int32(config.Priority))
+		sportTypes = append(sportTypes, int32(config.SportType))
+		marketSubTypes = append(marketSubTypes, int32(config.MarketSubType))
+		minDefaultValues = append(minDefaultValues, int32(config.MinValue))
+		maxLimitValues = append(maxLimitValues, int32(config.MaxValue))
+		isActives = append(isActives, config.IsActive)
+	}
+
+	// Perform bulk upsert
+	if len(codes) > 0 {
+		err = s.db.BulkUpsertMarketTypes(ctx, generated.BulkUpsertMarketTypesParams{
+			Codes:                  codes,
+			Names:                  names,
+			Slugs:                  slugs,
+			Descriptions:           descriptions,
+			IddaaMarketIds:         iddaaMarketIDs,
+			IsLives:                isLives,
+			MarketTypes:            marketTypes,
+			MinMarketDefaultValues: minMarketDefaultValues,
+			MaxMarketLimitValues:   maxMarketLimitValues,
+			Priorities:             priorities,
+			SportTypes:             sportTypes,
+			MarketSubTypes:         marketSubTypes,
+			MinDefaultValues:       minDefaultValues,
+			MaxLimitValues:         maxLimitValues,
+			IsActives:              isActives,
+		})
+
+		if err != nil {
 			log.Error().
 				Err(err).
-				Str("action", "save_failed").
-				Str("market_key", marketKey).
-				Int("market_id", config.ID).
-				Msg("Failed to save market config")
-			continue
+				Str("action", "bulk_upsert_failed").
+				Int("market_count", len(codes)).
+				Msg("Failed to bulk upsert market configs")
+			return fmt.Errorf("failed to bulk upsert market configs: %w", err)
 		}
-		synced++
 	}
 
 	log.Info().
-		Int("synced_count", synced).
+		Int("synced_count", len(codes)).
 		Int("total_count", len(resp.Data.Markets)).
-		Int("error_count", errors).
 		Str("action", "sync_complete").
-		Msg("Market config sync completed")
+		Msg("Market config sync completed with bulk upsert")
 	return nil
-}
-
-func (s *MarketConfigService) saveMarketConfig(ctx context.Context, marketKey string, config models.IddaaMarketConfig) error {
-	// Use the market key as the code (e.g., "2_821") to match the format used in events processing
-	marketTypeCode := marketKey
-
-	// Generate slug from the Turkish name and make it unique with market key
-	slug := generateSlugFromName(config.Name, marketKey)
-
-	// Use all fields from the API with Turkish names and descriptions
-	params := database.UpsertMarketTypeParams{
-		Code:                  marketTypeCode,
-		Name:                  config.Name, // Already in Turkish from API
-		Slug:                  slug,
-		Description:           pgtype.Text{String: config.Description, Valid: config.Description != ""},
-		IddaaMarketID:         pgtype.Int4{Int32: int32(config.ID), Valid: true},
-		IsLive:                pgtype.Bool{Bool: config.IsLive, Valid: true},
-		MarketType:            pgtype.Int4{Int32: int32(config.MarketType), Valid: true},
-		MinMarketDefaultValue: pgtype.Int4{Int32: int32(config.MinMarketValue), Valid: true},
-		MaxMarketLimitValue:   pgtype.Int4{Int32: int32(config.MaxMarketValue), Valid: true},
-		Priority:              pgtype.Int4{Int32: int32(config.Priority), Valid: true},
-		SportType:             pgtype.Int4{Int32: int32(config.SportType), Valid: true},
-		MarketSubType:         pgtype.Int4{Int32: int32(config.MarketSubType), Valid: true},
-		MinDefaultValue:       pgtype.Int4{Int32: int32(config.MinValue), Valid: true},
-		MaxLimitValue:         pgtype.Int4{Int32: int32(config.MaxValue), Valid: true},
-		IsActive:              pgtype.Bool{Bool: config.IsActive, Valid: true},
-	}
-
-	_, err := s.db.UpsertMarketType(ctx, params)
-	if err != nil {
-		return fmt.Errorf("failed to upsert market config: %w", err)
-	}
-
-	log := logger.WithContext(ctx, "market-config-sync")
-	log.Debug().
-		Str("action", "config_saved").
-		Str("market_key", marketKey).
-		Str("market_name", config.Name).
-		Int("market_id", config.ID).
-		Int("market_subtype", config.MarketSubType).
-		Bool("is_active", config.IsActive).
-		Msg("Synced market config")
-	return nil
-}
-
-// generateSlugFromName creates a URL-friendly slug from Turkish market name and market key
-func generateSlugFromName(name string, marketKey string) string {
-	slug := strings.ToLower(name)
-	// Handle Turkish characters
-	slug = strings.ReplaceAll(slug, "ç", "c")
-	slug = strings.ReplaceAll(slug, "ğ", "g")
-	slug = strings.ReplaceAll(slug, "ı", "i")
-	slug = strings.ReplaceAll(slug, "ö", "o")
-	slug = strings.ReplaceAll(slug, "ş", "s")
-	slug = strings.ReplaceAll(slug, "ü", "u")
-	// Handle special characters
-	slug = strings.ReplaceAll(slug, " ", "-")
-	slug = strings.ReplaceAll(slug, "/", "-")
-	slug = strings.ReplaceAll(slug, "(", "")
-	slug = strings.ReplaceAll(slug, ")", "")
-	slug = strings.ReplaceAll(slug, ",", "")
-	slug = strings.ReplaceAll(slug, "{", "")
-	slug = strings.ReplaceAll(slug, "}", "")
-	slug = strings.ReplaceAll(slug, "[", "")
-	slug = strings.ReplaceAll(slug, "]", "")
-	slug = strings.ReplaceAll(slug, ":", "")
-	slug = strings.ReplaceAll(slug, ".", "")
-
-	// Ensure uniqueness by appending market key
-	return fmt.Sprintf("%s-%s", slug, strings.ReplaceAll(marketKey, "_", "-"))
 }

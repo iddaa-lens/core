@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// MockDB implements database.DBTX for testing
+// MockDB implements generated.DBTX for testing
 type MockDB struct {
 	locks map[int64]bool
 }

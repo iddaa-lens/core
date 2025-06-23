@@ -7,6 +7,7 @@ This guide covers the database schema, migrations, and query patterns used in th
 ### Core Tables
 
 #### `sports`
+
 ```sql
 CREATE TABLE sports (
     id INTEGER PRIMARY KEY,           -- Sport ID from Iddaa API
@@ -18,6 +19,7 @@ CREATE TABLE sports (
 **Purpose**: Maps sport IDs to human-readable names and internal codes.
 
 #### `competitions`
+
 ```sql
 CREATE TABLE competitions (
     id SERIAL PRIMARY KEY,
@@ -37,6 +39,7 @@ CREATE TABLE competitions (
 **Purpose**: Stores leagues, tournaments, and competitions from Iddaa API.
 
 #### `teams`
+
 ```sql
 CREATE TABLE teams (
     id SERIAL PRIMARY KEY,
@@ -53,6 +56,7 @@ CREATE TABLE teams (
 **Purpose**: Team information for matches and events.
 
 #### `events`
+
 ```sql
 CREATE TABLE events (
     id SERIAL PRIMARY KEY,
@@ -72,6 +76,7 @@ CREATE TABLE events (
 **Purpose**: Individual matches/games within competitions.
 
 #### `market_types`
+
 ```sql
 CREATE TABLE market_types (
     id SERIAL PRIMARY KEY,
@@ -84,6 +89,7 @@ CREATE TABLE market_types (
 **Purpose**: Betting market types (1X2, Over/Under, etc.).
 
 #### `odds`
+
 ```sql
 CREATE TABLE odds (
     id SERIAL PRIMARY KEY,
@@ -98,6 +104,7 @@ CREATE TABLE odds (
 **Purpose**: Historical odds data for events and markets.
 
 #### `predictions`
+
 ```sql
 CREATE TABLE predictions (
     id SERIAL PRIMARY KEY,
@@ -114,6 +121,7 @@ CREATE TABLE predictions (
 **Purpose**: AI-generated predictions for events.
 
 #### `app_config`
+
 ```sql
 CREATE TABLE app_config (
     id SERIAL PRIMARY KEY,
@@ -132,6 +140,7 @@ CREATE TABLE app_config (
 ## 🗂️ Indexes
 
 ### Performance Indexes
+
 ```sql
 -- Competitions
 CREATE INDEX idx_competitions_sport_country ON competitions (sport_id, country_code);
@@ -235,7 +244,7 @@ func (q *Queries) UpsertCompetition(ctx context.Context, arg UpsertCompetitionPa
 ```go
 // pkg/services/competition_service.go
 
-func (s *CompetitionService) GetCompetition(ctx context.Context, iddaaID int32) (*database.Competition, error) {
+func (s *CompetitionService) GetCompetition(ctx context.Context, iddaaID int32) (*generated.Competition, error) {
     comp, err := s.db.GetCompetitionByIddaaID(ctx, iddaaID)
     if err != nil {
         if err == pgx.ErrNoRows {

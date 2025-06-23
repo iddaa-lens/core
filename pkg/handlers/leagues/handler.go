@@ -5,18 +5,17 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models/api"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Handler struct {
-	queries *database.Queries
+	queries *generated.Queries
 	logger  *logger.Logger
 }
 
-func NewHandler(queries *database.Queries, logger *logger.Logger) *Handler {
+func NewHandler(queries *generated.Queries, logger *logger.Logger) *Handler {
 	return &Handler{
 		queries: queries,
 		logger:  logger,
@@ -24,7 +23,7 @@ func NewHandler(queries *database.Queries, logger *logger.Logger) *Handler {
 }
 
 type LeagueWithMapping struct {
-	database.League
+	generated.League
 	IsMapped bool `json:"is_mapped"`
 }
 
@@ -35,7 +34,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	notMapped := r.URL.Query().Get("not_mapped") == "true"
 
-	var leagues []database.League
+	var leagues []generated.League
 	var err error
 
 	if notMapped {
@@ -57,7 +56,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for _, league := range leagues {
 		leagueWithMapping := LeagueWithMapping{
 			League:   league,
-			IsMapped: league.ApiFootballID.Valid,
+			IsMapped: league.ApiFootballID != nil,
 		}
 		response = append(response, leagueWithMapping)
 	}
@@ -66,7 +65,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(api.Response{
 		Success: true,
 		Data:    response,
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"total": len(response),
 		},
 	}); err != nil {
@@ -102,12 +101,9 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update league with API Football ID
-	err = h.queries.UpdateLeagueApiFootballID(ctx, database.UpdateLeagueApiFootballIDParams{
-		ID: int32(leagueID),
-		ApiFootballID: pgtype.Int4{
-			Int32: req.ApiFootballID,
-			Valid: true,
-		},
+	err = h.queries.UpdateLeagueApiFootballID(ctx, generated.UpdateLeagueApiFootballIDParams{
+		ID:            int32(leagueID),
+		ApiFootballID: &req.ApiFootballID,
 	})
 
 	if err != nil {
@@ -117,16 +113,11 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also create/update league mapping record
-	_, err = h.queries.UpsertLeagueMapping(ctx, database.UpsertLeagueMappingParams{
+	_, err = h.queries.UpsertLeagueMapping(ctx, generated.UpsertLeagueMappingParams{
 		InternalLeagueID:    int32(leagueID),
 		FootballApiLeagueID: req.ApiFootballID,
-		Confidence: pgtype.Numeric{
-			Int:   nil, // Will be set to a default value by the database
-			Exp:   0,
-			NaN:   false,
-			Valid: true,
-		},
-		MappingMethod: "manual",
+		Confidence:          1.0, // Set a default confidence value, adjust as needed
+		MappingMethod:       "manual",
 	})
 
 	if err != nil {

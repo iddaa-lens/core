@@ -6,13 +6,13 @@ import (
 	"math"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 // SmartMoneyTracker analyzes odds movements and generates alerts using existing data
 type SmartMoneyTracker struct {
-	db     *database.Queries
+	db     *generated.Queries
 	logger *logger.Logger
 
 	// Alert thresholds
@@ -23,7 +23,7 @@ type SmartMoneyTracker struct {
 }
 
 // NewSmartMoneyTracker creates a new smart money tracker service
-func NewSmartMoneyTracker(db *database.Queries) *SmartMoneyTracker {
+func NewSmartMoneyTracker(db *generated.Queries) *SmartMoneyTracker {
 	return &SmartMoneyTracker{
 		db:                    db,
 		logger:                logger.New("smart-money-tracker"),
@@ -70,10 +70,8 @@ func (smt *SmartMoneyTracker) AnalyzeOddsHistoryForAlerts(ctx context.Context, o
 
 	// Skip if no meaningful change
 	changePercent := 0.0
-	if oddsHistory.ChangePercentage.Valid {
-		if changePercentFloat, err := oddsHistory.ChangePercentage.Float64Value(); err == nil && changePercentFloat.Valid {
-			changePercent = changePercentFloat.Float64
-		}
+	if oddsHistory.ChangePercentage != nil {
+		changePercent = float64(*oddsHistory.ChangePercentage)
 	}
 
 	if math.Abs(changePercent) < 5.0 {
@@ -81,10 +79,8 @@ func (smt *SmartMoneyTracker) AnalyzeOddsHistoryForAlerts(ctx context.Context, o
 	}
 
 	multiplier := 1.0
-	if oddsHistory.Multiplier.Valid {
-		if multiplierFloat, err := oddsHistory.Multiplier.Float64Value(); err == nil && multiplierFloat.Valid {
-			multiplier = multiplierFloat.Float64
-		}
+	if oddsHistory.Multiplier != nil {
+		multiplier = *oddsHistory.Multiplier
 	}
 
 	// Check for big mover alert

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iddaa-lens/core/pkg/logger"
@@ -13,11 +14,12 @@ import (
 
 // AITranslationService handles AI-powered translation of Turkish league names to English
 type AITranslationService struct {
-	client  *http.Client
-	apiKey  string
-	baseURL string
-	cache   map[string][]string // Simple in-memory cache
-	logger  *logger.Logger
+	client   *http.Client
+	apiKey   string
+	baseURL  string
+	cache    map[string][]string // Simple in-memory cache
+	cacheMux sync.RWMutex        // Protects cache from concurrent access
+	logger   *logger.Logger
 }
 
 // NewAITranslationService creates a new AI translation service
@@ -66,9 +68,11 @@ type APIError struct {
 
 // TranslateLeagueName translates a Turkish league name to multiple English variations
 func (s *AITranslationService) TranslateLeagueName(ctx context.Context, turkishName, country string) ([]string, error) {
-	// Check cache first
+	// Check cache first (read lock)
 	cacheKey := fmt.Sprintf("%s|%s", turkishName, country)
+	s.cacheMux.RLock()
 	if cached, exists := s.cache[cacheKey]; exists {
+		s.cacheMux.RUnlock()
 		s.logger.Debug().
 			Str("action", "cache_hit").
 			Str("league_name", turkishName).
@@ -76,6 +80,7 @@ func (s *AITranslationService) TranslateLeagueName(ctx context.Context, turkishN
 			Msg("Using cached league translation")
 		return cached, nil
 	}
+	s.cacheMux.RUnlock()
 
 	// Create the translation prompt
 	prompt := s.createTranslationPrompt(turkishName, country)
@@ -93,8 +98,10 @@ func (s *AITranslationService) TranslateLeagueName(ctx context.Context, turkishN
 		return s.fallbackTranslation(turkishName), nil
 	}
 
-	// Cache the result
+	// Cache the result (write lock)
+	s.cacheMux.Lock()
 	s.cache[cacheKey] = translations
+	s.cacheMux.Unlock()
 	s.logger.Info().
 		Str("action", "translated").
 		Str("type", "league").
@@ -122,16 +129,31 @@ Provide 3-5 English variations commonly used in international football databases
 1. Official English name used by FIFA/UEFA
 2. Common name used in international media
 3. Short/abbreviated version
-4. Generic descriptive name
+4. Generic descriptive name with level (1st, 2nd, 3rd League)
 5. Alternative spelling if applicable
 
 Return ONLY the English names, one per line, without numbers or explanations.
+
+Key translation patterns:
+- "Süper Lig" → "Super League" or "Super Lig"
+- "1. Lig" → "First League" or "1st League" 
+- "2. Lig" → "Second League" or "2nd League"
+- "3. Lig" → "Third League" or "3rd League"
+- "Play-off" → "Playoffs"
+- "Grup" → "Group"
+- "Kupa" → "Cup"
+- Country names should be in English
 
 Examples:
 Turkish: "Türkiye Süper Lig" → 
 Super Lig
 Turkish Super League
 Turkey Super League
+
+Turkish: "TFF 1. Lig" →
+First League
+1st League
+Turkish First Division
 
 Turkish: "İspanya La Liga" →
 La Liga
@@ -160,7 +182,7 @@ func (s *AITranslationService) callOpenAI(ctx context.Context, prompt string) ([
 				Content: prompt,
 			},
 		},
-		MaxTokens:   150,
+		MaxTokens:   500, // Increased for bulk matching responses
 		Temperature: 0.1, // Low temperature for consistent translations
 	}
 
@@ -289,6 +311,28 @@ Examples:
 Now process: "%s"`, name, country, name)
 }
 
+// ExecuteCustomPrompt executes a custom prompt and returns the raw response
+func (s *AITranslationService) ExecuteCustomPrompt(ctx context.Context, prompt string) (string, error) {
+	s.logger.Debug().
+		Str("action", "custom_prompt").
+		Int("prompt_length", len(prompt)).
+		Msg("Executing custom AI prompt")
+
+	// Call OpenAI API
+	response, err := s.callOpenAI(ctx, prompt)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute custom prompt: %w", err)
+	}
+
+	// For custom prompts, join all response lines into a single string
+	if len(response) > 0 {
+		// Join all lines to preserve JSON structure
+		return strings.Join(response, "\n"), nil
+	}
+
+	return "", fmt.Errorf("no response from AI")
+}
+
 // TranslateTeamName translates a team name to multiple English variations
 func (s *AITranslationService) TranslateTeamName(ctx context.Context, teamName, country string) ([]string, error) {
 	// Check cache first
@@ -364,10 +408,237 @@ Now translate: "%s"`, teamName, country, teamName)
 
 // ClearCache clears the translation cache
 func (s *AITranslationService) ClearCache() {
+	s.cacheMux.Lock()
 	s.cache = make(map[string][]string)
+	s.cacheMux.Unlock()
 }
 
 // GetCacheSize returns the number of cached translations
 func (s *AITranslationService) GetCacheSize() int {
-	return len(s.cache)
+	s.cacheMux.RLock()
+	size := len(s.cache)
+	s.cacheMux.RUnlock()
+	return size
+}
+
+// BatchTranslateLeagueNames translates multiple league names in a single API call
+func (s *AITranslationService) BatchTranslateLeagueNames(ctx context.Context, leagueNames []string) (map[string][]string, error) {
+	if len(leagueNames) == 0 {
+		return make(map[string][]string), nil
+	}
+
+	// Check if API key is available
+	if s.apiKey == "" {
+		s.logger.Warn().
+			Str("action", "batch_translation_no_api_key").
+			Msg("No API key configured for AI translation")
+		// Return fallback translations
+		results := make(map[string][]string)
+		for _, name := range leagueNames {
+			results[name] = s.fallbackTranslation(name)
+		}
+		return results, nil
+	}
+
+	// Check cache first and build list of names that need translation
+	results := make(map[string][]string)
+	toTranslate := []string{}
+
+	s.cacheMux.RLock()
+	for _, name := range leagueNames {
+		cacheKey := "league:" + name
+		if cached, ok := s.cache[cacheKey]; ok {
+			results[name] = cached
+		} else {
+			toTranslate = append(toTranslate, name)
+		}
+	}
+	s.cacheMux.RUnlock()
+
+	// If all are cached, return early
+	if len(toTranslate) == 0 {
+		return results, nil
+	}
+
+	// Process in smaller batches of 10 for better responsiveness
+	const batchSize = 10
+	s.logger.Debug().
+		Int("total_to_translate", len(toTranslate)).
+		Int("batch_size", batchSize).
+		Msg("Starting batch processing")
+
+	for i := 0; i < len(toTranslate); i += batchSize {
+		end := i + batchSize
+		if end > len(toTranslate) {
+			end = len(toTranslate)
+		}
+		batch := toTranslate[i:end]
+
+		s.logger.Debug().
+			Int("batch_number", (i/batchSize)+1).
+			Int("batch_start", i).
+			Int("batch_size", len(batch)).
+			Msg("Processing batch")
+
+		// Create batch translation prompt
+		prompt := s.createBatchLeagueTranslationPrompt(batch)
+
+		// Call OpenAI for batch translation
+		response, err := s.callOpenAIForBatch(ctx, prompt)
+		if err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("action", "batch_translation_failed").
+				Int("batch_start", i).
+				Int("batch_size", len(batch)).
+				Msg("Batch AI translation failed, using fallback for this batch")
+
+			// Use fallback for this batch
+			for _, name := range batch {
+				results[name] = s.fallbackTranslation(name)
+			}
+			continue
+		}
+
+		// Parse batch response and update cache
+		batchResults := s.parseBatchResponse(response, batch)
+		s.cacheMux.Lock()
+		for name, translations := range batchResults {
+			results[name] = translations
+			cacheKey := "league:" + name
+			s.cache[cacheKey] = translations
+		}
+		s.cacheMux.Unlock()
+	}
+
+	return results, nil
+}
+
+// createBatchLeagueTranslationPrompt creates a prompt for translating multiple league names
+func (s *AITranslationService) createBatchLeagueTranslationPrompt(leagueNames []string) string {
+	return fmt.Sprintf(`You are a football league name translator specializing in Turkish to English translations.
+
+I need you to translate the following Turkish football league names to their English equivalents.
+For each league, provide up to 3 possible English translations, ordered by likelihood.
+
+Format your response as JSON with the following structure:
+{
+  "league_name_1": ["translation1", "translation2", "translation3"],
+  "league_name_2": ["translation1", "translation2"],
+  ...
+}
+
+Guidelines:
+- Keep official names where they exist (e.g., "Süper Lig" → "Super Lig")
+- Translate descriptive parts (e.g., "1. Lig" → "1st League", "First League")
+- For playoffs/groups, translate terms like "Play-off" → "Playoffs", "Grup" → "Group"
+- Keep country names in English (Türkiye → Turkey, İspanya → Spain, etc.)
+- Remove diacritics from proper nouns if needed
+- Provide multiple variations including formal and informal names
+- Include division/tier information where applicable
+
+League names to translate:
+%s
+
+Respond only with the JSON object, no additional text.`, strings.Join(leagueNames, "\n"))
+}
+
+// callOpenAIForBatch makes a batch API call to OpenAI
+func (s *AITranslationService) callOpenAIForBatch(ctx context.Context, prompt string) (string, error) {
+	reqBody, err := json.Marshal(OpenAIRequest{
+		Model: "gpt-4o-mini",
+		Messages: []Message{
+			{
+				Role:    "system",
+				Content: "You are a helpful assistant that translates football league names from Turkish to English. Always respond with valid JSON.",
+			},
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+		MaxTokens:   2000,
+		Temperature: 0.3,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL, strings.NewReader(string(reqBody)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var response OpenAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if response.Error != nil {
+			return "", fmt.Errorf("OpenAI API error: %s", response.Error.Message)
+		}
+		return "", fmt.Errorf("OpenAI API returned status %d", resp.StatusCode)
+	}
+
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no response from OpenAI")
+	}
+
+	return response.Choices[0].Message.Content, nil
+}
+
+// parseBatchResponse parses the JSON response from batch translation
+func (s *AITranslationService) parseBatchResponse(response string, originalNames []string) map[string][]string {
+	results := make(map[string][]string)
+
+	// Try to parse as JSON
+	var jsonResponse map[string][]string
+	if err := json.Unmarshal([]byte(response), &jsonResponse); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("response", response).
+			Msg("Failed to parse batch translation response as JSON")
+
+		// Fallback for all names
+		for _, name := range originalNames {
+			results[name] = s.fallbackTranslation(name)
+		}
+		return results
+	}
+
+	// Map the responses back, handling case sensitivity
+	for _, originalName := range originalNames {
+		found := false
+		// Try exact match first
+		if translations, ok := jsonResponse[originalName]; ok {
+			results[originalName] = translations
+			found = true
+		} else {
+			// Try case-insensitive match
+			for key, translations := range jsonResponse {
+				if strings.EqualFold(key, originalName) {
+					results[originalName] = translations
+					found = true
+					break
+				}
+			}
+		}
+
+		// If not found in response, use fallback
+		if !found {
+			results[originalName] = s.fallbackTranslation(originalName)
+		}
+	}
+
+	return results
 }

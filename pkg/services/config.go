@@ -10,16 +10,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/models"
 )
 
 type ConfigService struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *IddaaClient
 }
 
-func NewConfigService(db *database.Queries, client *IddaaClient) *ConfigService {
+func NewConfigService(db *generated.Queries, client *IddaaClient) *ConfigService {
 	return &ConfigService{
 		db:     db,
 		client: client,
@@ -49,14 +49,14 @@ func (s *ConfigService) saveConfig(ctx context.Context, config *models.IddaaConf
 		return fmt.Errorf("failed to marshal config data: %w", err)
 	}
 
-	params := database.UpsertConfigParams{
+	params := generated.UpsertConfigParams{
 		Platform:   config.Data.Platform,
 		ConfigData: configDataBytes,
 	}
 
 	// Handle optional sportoto program name
 	if config.Data.SportotoProgramName != "" {
-		params.SportotoProgramName = pgtype.Text{String: config.Data.SportotoProgramName, Valid: true}
+		params.SportotoProgramName = &config.Data.SportotoProgramName
 	}
 
 	// Handle optional payin end date
@@ -87,7 +87,7 @@ func (s *ConfigService) saveConfig(ctx context.Context, config *models.IddaaConf
 	return nil
 }
 
-func (s *ConfigService) GetLatestConfig(ctx context.Context, platform string) (*database.AppConfig, error) {
+func (s *ConfigService) GetLatestConfig(ctx context.Context, platform string) (*generated.AppConfig, error) {
 	config, err := s.db.GetLatestConfig(ctx, platform)
 	if err != nil {
 		if err == pgx.ErrNoRows {

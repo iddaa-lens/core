@@ -2,346 +2,443 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
 )
 
 type EventsService struct {
-	db          *database.Queries
-	client      *IddaaClient
-	logger      *logger.Logger
-	rateLimiter *time.Ticker
-	// Simple market type cache
-	marketTypeCache map[string]database.MarketType
+	db     *generated.Queries
+	client *IddaaClient
+	logger *logger.Logger
+	// Market type cache - loaded once at startup
+	marketTypes map[string]int32 // code -> id mapping
 }
 
-func NewEventsService(db *database.Queries, client *IddaaClient) *EventsService {
+func NewEventsService(db *generated.Queries, client *IddaaClient) *EventsService {
 	service := &EventsService{
-		db:              db,
-		client:          client,
-		logger:          logger.New("events-service"),
-		rateLimiter:     time.NewTicker(100 * time.Millisecond), // Max 10 requests per second
-		marketTypeCache: make(map[string]database.MarketType),
+		db:          db,
+		client:      client,
+		logger:      logger.New("events-service"),
+		marketTypes: make(map[string]int32),
 	}
 
-	// Pre-populate market type cache
-	go service.preloadMarketTypeCache()
+	// Load all market types once at startup
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	marketTypes, err := db.ListMarketTypes(ctx)
+	if err != nil {
+		service.logger.Error().Err(err).Msg("Failed to load market types")
+	} else {
+		for _, mt := range marketTypes {
+			service.marketTypes[mt.Code] = mt.ID
+		}
+		service.logger.Info().
+			Int("count", len(marketTypes)).
+			Msg("Market types loaded")
+	}
 
 	return service
 }
 
-// Stop gracefully shuts down the service
-func (s *EventsService) Stop() {
-	s.rateLimiter.Stop()
-}
-
-// ProcessEventsResponse processes the API response and saves events, teams, and odds
+// ProcessEventsResponse processes the API response using bulk operations
 func (s *EventsService) ProcessEventsResponse(ctx context.Context, response *models.IddaaEventsResponse) error {
 	if !response.IsSuccess || response.Data == nil {
-		return fmt.Errorf("invalid API response: isSuccess=%t", response.IsSuccess)
+		return fmt.Errorf("invalid API response")
+	}
+
+	events := response.Data.Events
+	if len(events) == 0 {
+		return nil
 	}
 
 	log := logger.WithContext(ctx, "process-events")
+	log.Info().Int("event_count", len(events)).Msg("Starting bulk event processing")
 
-	successCount := 0
-	var lastError error
+	startTime := time.Now()
 
-	// Process events sequentially to avoid complexity
-	for _, event := range response.Data.Events {
-		if err := s.processEvent(ctx, event); err != nil {
-			lastError = err
-			log.Error().
-				Err(err).
-				Int("event_id", event.ID).
-				Str("home_team", event.HomeTeam).
-				Str("away_team", event.AwayTeam).
-				Msg("Failed to process event")
-		} else {
-			successCount++
-		}
+	// Step 1: Bulk process teams
+	teamMapping, err := s.bulkProcessTeams(ctx, events)
+	if err != nil {
+		return fmt.Errorf("failed to process teams: %w", err)
+	}
+
+	// Step 2: Bulk process events
+	eventMapping, err := s.bulkProcessEvents(ctx, events, teamMapping)
+	if err != nil {
+		return fmt.Errorf("failed to process events: %w", err)
+	}
+
+	// Step 3: Bulk process odds with history
+	oddsProcessed, historyCreated, err := s.bulkProcessOdds(ctx, events, eventMapping)
+	if err != nil {
+		return fmt.Errorf("failed to process odds: %w", err)
+	}
+
+	duration := time.Since(startTime)
+
+	// Calculate comprehensive metrics
+	historyRatio := float64(0)
+	if oddsProcessed > 0 {
+		historyRatio = float64(historyCreated) / float64(oddsProcessed) * 100
 	}
 
 	log.Info().
-		Int("success_count", successCount).
-		Int("total_events", len(response.Data.Events)).
-		Msg("Completed processing events response")
-
-	// Return error if all events failed
-	if successCount == 0 && lastError != nil {
-		return fmt.Errorf("all events failed to process: %w", lastError)
-	}
+		Dur("duration", duration).
+		Int("events_processed", len(events)).
+		Int("odds_processed", oddsProcessed).
+		Int("history_records", historyCreated).
+		Float64("history_ratio_pct", historyRatio).
+		Float64("events_per_second", float64(len(events))/duration.Seconds()).
+		Float64("odds_per_second", float64(oddsProcessed)/duration.Seconds()).
+		Msg("Event processing completed with metrics")
 
 	return nil
 }
 
-// processEvent processes a single event
-func (s *EventsService) processEvent(ctx context.Context, event models.IddaaEvent) error {
-	// Process teams
-	homeTeamID, err := s.upsertTeam(ctx, event.HomeTeam, event.HomeTeam)
-	if err != nil {
-		return fmt.Errorf("failed to process home team: %w", err)
+// bulkProcessTeams extracts and bulk upserts all teams
+func (s *EventsService) bulkProcessTeams(ctx context.Context, events []models.IddaaEvent) (map[string]int32, error) {
+	// Extract unique teams
+	teamSet := make(map[string]bool)
+	for _, event := range events {
+		teamSet[event.HomeTeam] = true
+		teamSet[event.AwayTeam] = true
 	}
 
-	awayTeamID, err := s.upsertTeam(ctx, event.AwayTeam, event.AwayTeam)
-	if err != nil {
-		return fmt.Errorf("failed to process away team: %w", err)
+	if len(teamSet) == 0 {
+		return make(map[string]int32), nil
 	}
 
-	// Get competition ID
-	competitionID, err := s.getCompetitionID(ctx, event.CompetitionID)
-	if err != nil {
-		return fmt.Errorf("competition error %d: %w", event.CompetitionID, err)
+	// Prepare arrays for bulk insert
+	externalIDs := make([]string, 0, len(teamSet))
+	names := make([]string, 0, len(teamSet))
+	slugs := make([]string, 0, len(teamSet))
+
+	for teamName := range teamSet {
+		externalIDs = append(externalIDs, teamName)
+		names = append(names, teamName)
+		slugs = append(slugs, slug.Make(teamName))
 	}
 
-	eventDate := time.Unix(event.Date, 0)
-	statusStr := s.convertEventStatus(event.Status)
-
-	// Upsert event
-	eventRecord, err := s.db.UpsertEvent(ctx, database.UpsertEventParams{
-		ExternalID: strconv.Itoa(event.ID),
-		LeagueID:   int32(competitionID),
-		HomeTeamID: int32(homeTeamID),
-		AwayTeamID: int32(awayTeamID),
-		EventDate:  pgtype.Timestamp{Time: eventDate, Valid: true},
-		Status:     statusStr,
-		HomeScore:  0, // Will be null in DB due to query
-		AwayScore:  0, // Will be null in DB due to query
-		BulletinID: int64(event.BulletinID),
-		Version:    int64(event.Version),
-		SportID:    int32(event.SportID),
-		BetProgram: int32(event.BetProgram),
-		Mbc:        int32(event.MBC),
-		HasKingOdd: event.HasKingOdd,
-		OddsCount:  int32(event.OddsCount),
-		HasCombine: event.HasCombine,
-		IsLive:     event.IsLive,
+	// Bulk upsert teams
+	teams, err := s.db.BulkUpsertTeams(ctx, generated.BulkUpsertTeamsParams{
+		ExternalIds: externalIDs,
+		Names:       names,
+		Slugs:       slugs,
 	})
 	if err != nil {
-		return fmt.Errorf("event %d: %w", event.ID, err)
+		return nil, fmt.Errorf("bulk team upsert failed: %w", err)
 	}
 
-	// Skip detailed odds for certain sports to reduce API load
-	skipDetailedOddsSports := map[int]bool{
-		// 117: true, // MMA
-		// 5:   true, // Tennis
+	// Create mapping
+	teamMapping := make(map[string]int32)
+	for _, team := range teams {
+		teamMapping[team.ExternalID] = team.ID
 	}
 
-	if skipDetailedOddsSports[event.SportID] || event.OddsCount > 100 {
-		return s.processMarkets(ctx, int(eventRecord.ID), event.Markets)
-	}
-
-	// Try to fetch detailed odds with a timeout
-	detailCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	err = s.fetchAndProcessDetailedOdds(detailCtx, int(eventRecord.ID), event.ID)
-	cancel()
-
-	if err != nil {
-		// Fallback to bulk markets
-		return s.processMarkets(ctx, int(eventRecord.ID), event.Markets)
-	}
-
-	return nil
+	return teamMapping, nil
 }
 
-// fetchAndProcessDetailedOdds fetches detailed odds for a specific event
-func (s *EventsService) fetchAndProcessDetailedOdds(ctx context.Context, eventID int, externalEventID int) error {
-	// Rate limit API calls
-	select {
-	case <-s.rateLimiter.C:
-		// Proceed
-	case <-ctx.Done():
-		return ctx.Err()
+// bulkProcessEvents bulk upserts all events
+func (s *EventsService) bulkProcessEvents(ctx context.Context, events []models.IddaaEvent, teamMapping map[string]int32) (map[string]int32, error) {
+	// Pre-fetch leagues
+	leagueCache := make(map[int]int32)
+	uniqueLeagueIDs := make(map[int]bool)
+	for _, event := range events {
+		uniqueLeagueIDs[event.CompetitionID] = true
 	}
 
-	singleEvent, err := s.client.GetSingleEvent(externalEventID)
+	for leagueID := range uniqueLeagueIDs {
+		league, err := s.db.GetLeagueByExternalID(ctx, fmt.Sprintf("%d", leagueID))
+		if err == nil {
+			leagueCache[leagueID] = league.ID
+		}
+	}
+
+	// Prepare arrays for bulk insert
+	externalIDs := make([]string, 0, len(events))
+	leagueIDs := make([]int32, 0, len(events))
+	homeTeamIDs := make([]int32, 0, len(events))
+	awayTeamIDs := make([]int32, 0, len(events))
+	eventDates := make([]pgtype.Timestamp, 0, len(events))
+	statuses := make([]string, 0, len(events))
+	bulletinIDs := make([]int64, 0, len(events))
+	versions := make([]int64, 0, len(events))
+	sportIDs := make([]int32, 0, len(events))
+	betPrograms := make([]int32, 0, len(events))
+	mbcs := make([]int32, 0, len(events))
+	hasKingOdds := make([]bool, 0, len(events))
+	oddsCounts := make([]int32, 0, len(events))
+	hasCombines := make([]bool, 0, len(events))
+	isLives := make([]bool, 0, len(events))
+	slugs := make([]string, 0, len(events))
+
+	for _, event := range events {
+		eventDate := time.Unix(event.Date, 0)
+		eventSlug := slug.Make(fmt.Sprintf("%s-%s-%s",
+			event.HomeTeam, event.AwayTeam, eventDate.Format("2006-01-02")))
+
+		externalIDs = append(externalIDs, strconv.Itoa(event.ID))
+		leagueIDs = append(leagueIDs, leagueCache[event.CompetitionID])
+		homeTeamIDs = append(homeTeamIDs, teamMapping[event.HomeTeam])
+		awayTeamIDs = append(awayTeamIDs, teamMapping[event.AwayTeam])
+		eventDates = append(eventDates, pgtype.Timestamp{Time: eventDate, Valid: true})
+		statuses = append(statuses, s.convertEventStatus(event.Status))
+		bulletinIDs = append(bulletinIDs, int64(event.BulletinID))
+		versions = append(versions, int64(event.Version))
+		sportIDs = append(sportIDs, int32(event.SportID))
+		betPrograms = append(betPrograms, int32(event.BetProgram))
+		mbcs = append(mbcs, int32(event.MBC))
+		hasKingOdds = append(hasKingOdds, event.HasKingOdd)
+		oddsCounts = append(oddsCounts, int32(event.OddsCount))
+		hasCombines = append(hasCombines, event.HasCombine)
+		isLives = append(isLives, event.IsLive)
+		slugs = append(slugs, eventSlug)
+	}
+
+	// Bulk upsert events
+	upsertedEvents, err := s.db.BulkUpsertEvents(ctx, generated.BulkUpsertEventsParams{
+		ExternalIds: externalIDs,
+		LeagueIds:   leagueIDs,
+		HomeTeamIds: homeTeamIDs,
+		AwayTeamIds: awayTeamIDs,
+		EventDates:  eventDates,
+		Statuses:    statuses,
+		BulletinIds: bulletinIDs,
+		Versions:    versions,
+		SportIds:    sportIDs,
+		BetPrograms: betPrograms,
+		Mbcs:        mbcs,
+		HasKingOdds: hasKingOdds,
+		OddsCounts:  oddsCounts,
+		HasCombines: hasCombines,
+		IsLives:     isLives,
+		Slugs:       slugs,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to fetch single event: %w", err)
+		return nil, fmt.Errorf("bulk event upsert failed: %w", err)
 	}
 
-	// Convert detailed markets to regular markets for processing
-	detailedMarkets := make([]models.IddaaMarket, len(singleEvent.Data.Markets))
-	for i, market := range singleEvent.Data.Markets {
-		outcomes := make([]models.IddaaOutcome, len(market.Outcomes))
-		for j, outcome := range market.Outcomes {
-			outcomes[j] = models.IddaaOutcome(outcome)
-		}
-
-		detailedMarkets[i] = models.IddaaMarket{
-			ID:           market.ID,
-			Type:         market.Type,
-			SubType:      market.SubType,
-			Version:      market.Version,
-			Status:       market.Status,
-			MBC:          market.MBC,
-			SpecialValue: market.SpecialValue,
-			Outcomes:     outcomes,
-		}
+	// Create mapping
+	eventMapping := make(map[string]int32)
+	for _, event := range upsertedEvents {
+		eventMapping[event.ExternalID] = event.ID
 	}
 
-	return s.processMarkets(ctx, eventID, detailedMarkets)
+	return eventMapping, nil
 }
 
-// processMarkets processes all markets and their odds for an event
-func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets []models.IddaaMarket) error {
-	for _, market := range markets {
-		if err := s.processSingleMarket(ctx, eventID, market); err != nil {
-			// Log error but continue processing other markets
-			s.logger.Error().
-				Err(err).
-				Int("event_id", eventID).
-				Int("market_id", market.ID).
-				Msg("Failed to process market")
-		}
-	}
-	return nil
-}
+// bulkProcessOdds processes all odds in bulk with history tracking
+func (s *EventsService) bulkProcessOdds(ctx context.Context, events []models.IddaaEvent, eventMapping map[string]int32) (int, int, error) {
+	// Prepare odds data
+	var eventIDs []int32
+	var marketTypeIDs []int32
+	var outcomes []string
+	var oddsValues []float64
+	var marketParams [][]byte
 
-// processSingleMarket processes a single market and its outcomes
-func (s *EventsService) processSingleMarket(ctx context.Context, eventID int, market models.IddaaMarket) error {
-	marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
+	newOddsMap := make(map[string]float64)
 
-	// Get or create market type
-	marketType, err := s.getOrCreateMarketType(ctx, marketTypeCode, market)
-	if err != nil {
-		return fmt.Errorf("market type %s: %w", marketTypeCode, err)
-	}
+	for _, event := range events {
+		eventID := eventMapping[fmt.Sprintf("%d", event.ID)]
 
-	// Process each outcome
-	for _, outcome := range market.Outcomes {
-		outcomeStr := s.formatOutcomeName(outcome.Name, market.SubType, market.SpecialValue)
-
-		// Get current odds to check if we need to create history
-		currentOdds, err := s.db.GetCurrentOddsByOutcome(ctx, database.GetCurrentOddsByOutcomeParams{
-			EventID:      int32(eventID),
-			MarketTypeID: marketType.ID,
-			Outcome:      outcomeStr,
-		})
-
-		// Create numeric values
-		oddsValue := pgtype.Numeric{}
-		if err := oddsValue.Scan(fmt.Sprintf("%.3f", outcome.Odds)); err != nil {
-			s.logger.Error().Err(err).Float64("odds", outcome.Odds).Msg("Failed to scan odds value")
-			continue
-		}
-
-		var openingValue, highestValue, lowestValue pgtype.Numeric
-		var previousValue float64
-		hasExistingOdds := err == nil
-
-		if hasExistingOdds {
-			openingValue = currentOdds.OpeningValue
-			prevFloat, _ := currentOdds.OddsValue.Float64Value()
-			if prevFloat.Valid {
-				previousValue = prevFloat.Float64
-			}
-			highestValue = currentOdds.HighestValue
-			lowestValue = currentOdds.LowestValue
-
-			// Update highest/lowest if needed
-			highestFloat, _ := highestValue.Float64Value()
-			lowestFloat, _ := lowestValue.Float64Value()
-
-			if highestFloat.Valid && outcome.Odds > highestFloat.Float64 {
-				highestValue = oddsValue
-			}
-			if lowestFloat.Valid && outcome.Odds < lowestFloat.Float64 {
-				lowestValue = oddsValue
-			}
-		} else {
-			openingValue = oddsValue
-			highestValue = oddsValue
-			lowestValue = oddsValue
-		}
-
-		// Upsert current odds
-		_, err = s.db.UpsertCurrentOdds(ctx, database.UpsertCurrentOddsParams{
-			EventID:      int32(eventID),
-			MarketTypeID: marketType.ID,
-			Outcome:      outcomeStr,
-			OddsValue:    oddsValue,
-			OpeningValue: openingValue,
-			HighestValue: highestValue,
-			LowestValue:  lowestValue,
-			WinningOdds:  pgtype.Numeric{}, // Null value
-		})
-		if err != nil {
-			return fmt.Errorf("failed to upsert odds: %w", err)
-		}
-
-		// Create history record if odds changed
-		if hasExistingOdds && math.Abs(previousValue-outcome.Odds) > 0.001 {
-			prevValue := pgtype.Numeric{}
-			if err := prevValue.Scan(fmt.Sprintf("%.3f", previousValue)); err != nil {
-				s.logger.Error().Err(err).Float64("previous_value", previousValue).Msg("Failed to scan previous value")
+		for _, market := range event.Markets {
+			marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
+			marketTypeID, exists := s.marketTypes[marketTypeCode]
+			if !exists {
+				s.logger.Warn().
+					Str("code", marketTypeCode).
+					Int("type", market.Type).
+					Int("subtype", market.SubType).
+					Msg("Unknown market type, skipping")
 				continue
 			}
 
-			_, err = s.db.CreateOddsHistory(ctx, database.CreateOddsHistoryParams{
-				EventID:       int32(eventID),
-				MarketTypeID:  marketType.ID,
-				Outcome:       outcomeStr,
-				OddsValue:     oddsValue,
-				PreviousValue: prevValue,
-				WinningOdds:   pgtype.Numeric{}, // Null value
-			})
-			if err != nil {
-				s.logger.Warn().
-					Err(err).
-					Str("outcome", outcomeStr).
-					Msg("Failed to create odds history")
+			params := models.ExtractMarketParams(market.SpecialValue)
+			paramsJSON, _ := json.Marshal(params)
+
+			for _, outcome := range market.Outcomes {
+				outcomeStr := s.formatOutcomeName(outcome.Name, market.SubType, market.SpecialValue)
+
+				eventIDs = append(eventIDs, eventID)
+				marketTypeIDs = append(marketTypeIDs, marketTypeID)
+				outcomes = append(outcomes, outcomeStr)
+				oddsValues = append(oddsValues, outcome.Odds)
+				marketParams = append(marketParams, paramsJSON)
+
+				// Store for history tracking
+				key := fmt.Sprintf("%d-%d-%s", eventID, marketTypeID, outcomeStr)
+				newOddsMap[key] = outcome.Odds
 			}
 		}
 	}
 
-	return nil
+	if len(eventIDs) == 0 {
+		return 0, 0, nil
+	}
+
+	// Get existing odds for comparison
+	existingOdds, err := s.db.BulkGetCurrentOddsForComparison(ctx, generated.BulkGetCurrentOddsForComparisonParams{
+		EventIds:      eventIDs,
+		MarketTypeIds: marketTypeIDs,
+		Outcomes:      outcomes,
+	})
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to get existing odds for comparison")
+	}
+
+	// Build map of existing odds
+	existingOddsMap := make(map[string]generated.BulkGetCurrentOddsForComparisonRow)
+	for _, existing := range existingOdds {
+		key := fmt.Sprintf("%v-%v-%s", existing.EventID, existing.MarketTypeID, existing.Outcome)
+		existingOddsMap[key] = existing
+	}
+
+	// Bulk upsert current odds
+	const chunkSize = 1000
+	for i := 0; i < len(eventIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(eventIDs) {
+			end = len(eventIDs)
+		}
+
+		err := s.db.BulkUpsertCurrentOdds(ctx, generated.BulkUpsertCurrentOddsParams{
+			EventIds:      eventIDs[i:end],
+			MarketTypeIds: marketTypeIDs[i:end],
+			Outcomes:      outcomes[i:end],
+			OddsValues:    oddsValues[i:end],
+			MarketParams:  marketParams[i:end],
+		})
+		if err != nil {
+			s.logger.Error().
+				Err(err).
+				Int("chunk_start", i).
+				Int("chunk_size", end-i).
+				Msg("Failed to bulk upsert odds chunk")
+		}
+	}
+
+	// Create history records for changed odds
+	var historyEventIDs []int32
+	var historyMarketTypeIDs []int32
+	var historyOutcomes []string
+	var historyOddsValues []float64
+	var historyPreviousValues []float64
+	var historyChangeAmounts []float64
+	var historyChangePercentages []float64
+	var historyMultipliers []float64
+	var historyIsReverseMovements []bool
+	var historySignificanceLevels []string
+	var historyMinutesToKickoffs []int32
+	var historyMarketParams [][]byte
+
+	// Process changes
+	for i := range eventIDs {
+		key := fmt.Sprintf("%d-%d-%s", eventIDs[i], marketTypeIDs[i], outcomes[i])
+		newValue := newOddsMap[key]
+
+		if existing, exists := existingOddsMap[key]; exists {
+			oldValue := existing.OddsValue
+			if math.Abs(newValue-oldValue) > 0.001 {
+				// Calculate change metrics
+				changeAmount := newValue - oldValue
+				changePercentage := (changeAmount / oldValue) * 100
+				multiplier := newValue / oldValue
+
+				// Determine significance
+				significanceLevel := "normal"
+				if math.Abs(changeAmount) >= 0.5 {
+					significanceLevel = "extreme"
+				} else if math.Abs(changeAmount) >= 0.2 {
+					significanceLevel = "high"
+				}
+
+				// Calculate minutes to kickoff
+				minutesToKickoff := int32(0)
+				if existing.EventDate.Valid {
+					duration := time.Until(existing.EventDate.Time)
+					minutesToKickoff = int32(duration.Minutes())
+				}
+
+				// Add to history arrays
+				historyEventIDs = append(historyEventIDs, eventIDs[i])
+				historyMarketTypeIDs = append(historyMarketTypeIDs, marketTypeIDs[i])
+				historyOutcomes = append(historyOutcomes, outcomes[i])
+				historyOddsValues = append(historyOddsValues, oddsValues[i])
+				historyPreviousValues = append(historyPreviousValues, oldValue)
+				historyChangeAmounts = append(historyChangeAmounts, changeAmount)
+				historyChangePercentages = append(historyChangePercentages, changePercentage)
+				historyMultipliers = append(historyMultipliers, multiplier)
+				historyIsReverseMovements = append(historyIsReverseMovements, false) // Simplified
+				historySignificanceLevels = append(historySignificanceLevels, significanceLevel)
+				historyMinutesToKickoffs = append(historyMinutesToKickoffs, minutesToKickoff)
+				historyMarketParams = append(historyMarketParams, marketParams[i])
+			}
+		}
+	}
+
+	// Bulk insert history records if any
+	if len(historyEventIDs) > 0 {
+		const historyChunkSize = 500
+		for i := 0; i < len(historyEventIDs); i += historyChunkSize {
+			end := i + historyChunkSize
+			if end > len(historyEventIDs) {
+				end = len(historyEventIDs)
+			}
+
+			err := s.db.BulkInsertOddsHistory(ctx, generated.BulkInsertOddsHistoryParams{
+				EventIds:           historyEventIDs[i:end],
+				MarketTypeIds:      historyMarketTypeIDs[i:end],
+				Outcomes:           historyOutcomes[i:end],
+				OddsValues:         historyOddsValues[i:end],
+				PreviousValues:     historyPreviousValues[i:end],
+				ChangeAmounts:      historyChangeAmounts[i:end],
+				ChangePercentages:  historyChangePercentages[i:end],
+				Multipliers:        historyMultipliers[i:end],
+				IsReverseMovements: historyIsReverseMovements[i:end],
+				SignificanceLevels: historySignificanceLevels[i:end],
+				MinutesToKickoffs:  historyMinutesToKickoffs[i:end],
+				MarketParams:       historyMarketParams[i:end],
+			})
+			if err != nil {
+				s.logger.Error().
+					Err(err).
+					Int("history_chunk_size", end-i).
+					Msg("Failed to insert odds history")
+			}
+		}
+
+		s.logger.Info().
+			Int("history_records", len(historyEventIDs)).
+			Msg("Created odds history records")
+	}
+
+	return len(eventIDs), len(historyEventIDs), nil
 }
 
-// formatOutcomeName formats the outcome name with special value if applicable
+// Helper methods
+
 func (s *EventsService) formatOutcomeName(name string, subType int, specialValue string) string {
 	if specialValue == "" {
 		return name
 	}
-
-	// For Over/Under markets, include the special value for clarity
+	// For Over/Under markets, include the special value
 	if subType == 60 || subType == 101 || subType == 603 || subType == 604 {
 		return fmt.Sprintf("%s %s", name, specialValue)
 	}
-
 	return fmt.Sprintf("%s (%s)", name, specialValue)
 }
 
-// upsertTeam creates or updates a team record
-func (s *EventsService) upsertTeam(ctx context.Context, teamName, externalID string) (int, error) {
-	team, err := s.db.UpsertTeam(ctx, database.UpsertTeamParams{
-		ExternalID: externalID,
-		Name:       teamName,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("failed to upsert team: %w", err)
-	}
-	return int(team.ID), nil
-}
-
-// getCompetitionID retrieves the competition ID, returns 0 if not found
-func (s *EventsService) getCompetitionID(ctx context.Context, iddaaCompetitionID int) (int, error) {
-	league, err := s.db.GetLeagueByExternalID(ctx, fmt.Sprintf("%d", iddaaCompetitionID))
-	if err != nil {
-		// Return 0 if league not found - this will make LeagueID null in events table
-		return 0, nil
-	}
-	return int(league.ID), nil
-}
-
-// convertEventStatus converts integer status to string
 func (s *EventsService) convertEventStatus(status int) string {
 	switch status {
 	case 0:
@@ -359,183 +456,334 @@ func (s *EventsService) convertEventStatus(status int) string {
 	}
 }
 
-// getMarketTypeName returns human-readable market type name
-func (s *EventsService) getMarketTypeName(subType int) string {
-	switch subType {
-	case 1:
-		return "Maç Sonucu"
-	case 60:
-		return "Alt/Üst 0.5 Gol"
-	case 101:
-		return "Alt/Üst 2.5 Gol"
-	case 89:
-		return "İki Takım da Gol Atar"
-	case 88:
-		return "İlk Yarı Sonucu"
-	case 92:
-		return "Çifte Şans"
-	case 77:
-		return "Beraberlik Yoksa İade"
-	case 91:
-		return "Toplam Gol Tek/Çift"
-	case 720:
-		return "Kırmızı Kart"
-	case 36:
-		return "Tam Skor"
-	case 603:
-		return "Ev Sahibi Alt/Üst Gol"
-	case 604:
-		return "Deplasman Alt/Üst Gol"
-	case 722:
-		return "Ev Sahibi Korner"
-	case 723:
-		return "Deplasman Korner"
-	case 7:
-		return "Alt/Üst Gol"
-	case 4:
-		return "Toplam Gol Sayısı"
-	case 85:
-		return "Gol Atacak Takım"
-	case 86:
-		return "Tam Skor"
-	case 87:
-		return "İlk Gol"
-	case 90:
-		return "Her İki Yarı"
-	case 698:
-		return "Penaltı Var/Yok"
-	case 699:
-		return "Kırmızı Kart Var/Yok"
-	case 717:
-		return "İlk Yarı Tam Skor"
-	case 718:
-		return "Yarı/Maç Sonucu"
-	case 724:
-		return "Korner Sayısı"
-	case 100:
-		return "Handikap"
-	default:
-		return fmt.Sprintf("Pazar Tipi %d", subType)
-	}
-}
-
-// getMarketTypeDescription returns detailed description with special values
-func (s *EventsService) getMarketTypeDescription(subType int, specialValue string) string {
-	baseName := s.getMarketTypeName(subType)
-	if specialValue != "" && strings.Contains(baseName, "{0}") {
-		// Replace {0} placeholder with the special value
-		return strings.ReplaceAll(baseName, "{0}", specialValue)
-	} else if specialValue != "" {
-		// Fallback for markets without placeholders
-		return fmt.Sprintf("%s (%s)", baseName, specialValue)
-	}
-	return baseName
-}
-
 // GetActiveSports returns all active sports from the database
-func (s *EventsService) GetActiveSports(ctx context.Context) ([]database.Sport, error) {
-	sports, err := s.db.ListSports(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list sports: %w", err)
-	}
-	return sports, nil
+func (s *EventsService) GetActiveSports(ctx context.Context) ([]generated.Sport, error) {
+	return s.db.ListSports(ctx)
 }
 
-// ProcessDetailedMarkets processes detailed markets from the single event endpoint
+// ProcessDetailedMarkets processes detailed markets from single event endpoint using bulk operations
 func (s *EventsService) ProcessDetailedMarkets(ctx context.Context, eventID int, markets []models.IddaaDetailedMarket) error {
-	for _, market := range markets {
-		// Convert detailed market to standard market format
-		standardMarket := models.IddaaMarket{
+	// Convert to standard format
+	standardMarkets := make([]models.IddaaMarket, len(markets))
+	for i, market := range markets {
+		standardMarkets[i] = models.IddaaMarket{
 			ID:           market.ID,
 			Type:         market.Type,
 			SubType:      market.SubType,
 			SpecialValue: market.SpecialValue,
 			Outcomes:     make([]models.IddaaOutcome, len(market.Outcomes)),
 		}
-
-		// Convert detailed outcomes to standard outcomes
-		for i, outcome := range market.Outcomes {
-			standardMarket.Outcomes[i] = models.IddaaOutcome{
+		for j, outcome := range market.Outcomes {
+			standardMarkets[i].Outcomes[j] = models.IddaaOutcome{
 				Number: outcome.Number,
 				Odds:   outcome.Odds,
 				Name:   outcome.Name,
 			}
 		}
+	}
 
-		// Process using existing market processing logic
-		err := s.processSingleMarket(ctx, eventID, standardMarket)
+	// Use optimized bulk processing
+	return s.processMarketsBulk(ctx, eventID, standardMarkets)
+}
+
+// // processMarkets handles market processing for single events (used by detailed odds job)
+// func (s *EventsService) processMarkets(ctx context.Context, eventID int, markets []models.IddaaMarket) error {
+// 	// First, get ALL current odds for this event in one query
+// 	currentOdds, err := s.db.GetCurrentOdds(ctx, int32(eventID))
+// 	if err != nil {
+// 		s.logger.Warn().Err(err).Int("event_id", eventID).Msg("Failed to get current odds")
+// 	}
+
+// 	// Build a map for O(1) lookups
+// 	currentOddsMap := make(map[string]generated.GetCurrentOddsRow)
+// 	for _, odd := range currentOdds {
+// 		key := fmt.Sprintf("%d-%s", *odd.MarketTypeID, odd.Outcome)
+// 		currentOddsMap[key] = odd
+// 	}
+
+// 	// Now process markets without N+1 queries
+// 	for _, market := range markets {
+// 		marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
+// 		marketTypeID, exists := s.marketTypes[marketTypeCode]
+// 		if !exists {
+// 			s.logger.Warn().
+// 				Str("code", marketTypeCode).
+// 				Int("event_id", eventID).
+// 				Msg("Unknown market type, skipping")
+// 			continue
+// 		}
+
+// 		params := models.ExtractMarketParams(market.SpecialValue)
+// 		paramsJSON, _ := json.Marshal(params)
+
+// 		for _, outcome := range market.Outcomes {
+// 			outcomeStr := s.formatOutcomeName(outcome.Name, market.SubType, market.SpecialValue)
+
+// 			// Look up current odds from our map (O(1) instead of a database query)
+// 			key := fmt.Sprintf("%d-%s", marketTypeID, outcomeStr)
+// 			currentOdd, hasExisting := currentOddsMap[key]
+
+// 			var openingValue, previousValue, highestValue, lowestValue float64
+
+// 			if hasExisting {
+// 				// Update existing - use native float64 pointers
+// 				if currentOdd.OpeningValue != nil {
+// 					openingValue = *currentOdd.OpeningValue
+// 				}
+
+// 				if currentOdd.HighestValue != nil {
+// 					highestValue = *currentOdd.HighestValue
+// 				}
+
+// 				if currentOdd.LowestValue != nil {
+// 					lowestValue = *currentOdd.LowestValue
+// 				}
+
+// 				previousValue = currentOdd.OddsValue
+
+// 				// Update high/low
+// 				if outcome.Odds > highestValue {
+// 					highestValue = outcome.Odds
+// 				}
+// 				if outcome.Odds < lowestValue {
+// 					lowestValue = outcome.Odds
+// 				}
+// 			} else {
+// 				// New odds
+// 				openingValue = outcome.Odds
+// 				highestValue = outcome.Odds
+// 				lowestValue = outcome.Odds
+// 			}
+
+// 			// Upsert current odds
+// 			_, err = s.db.UpsertCurrentOdds(ctx, generated.UpsertCurrentOddsParams{
+// 				EventID:      int32(eventID),
+// 				MarketTypeID: marketTypeID,
+// 				Outcome:      outcomeStr,
+// 				OddsValue:    outcome.Odds,
+// 				OpeningValue: openingValue,
+// 				HighestValue: highestValue,
+// 				LowestValue:  lowestValue,
+// 				WinningOdds:  0,
+// 				MarketParams: paramsJSON,
+// 			})
+// 			if err != nil {
+// 				s.logger.Error().
+// 					Err(err).
+// 					Int("event_id", eventID).
+// 					Str("outcome", outcomeStr).
+// 					Msg("Failed to upsert odds")
+// 				continue
+// 			}
+
+// 			// Create history if changed
+// 			if hasExisting && math.Abs(previousValue-outcome.Odds) > 0.001 {
+// 				_, err = s.db.CreateOddsHistory(ctx, generated.CreateOddsHistoryParams{
+// 					EventID:       int32(eventID),
+// 					MarketTypeID:  marketTypeID,
+// 					Outcome:       outcomeStr,
+// 					OddsValue:     outcome.Odds,
+// 					PreviousValue: previousValue,
+// 					WinningOdds:   0,
+// 					MarketParams:  paramsJSON,
+// 				})
+// 				if err != nil {
+// 					s.logger.Error().
+// 						Err(err).
+// 						Int("event_id", eventID).
+// 						Str("outcome", outcomeStr).
+// 						Msg("Failed to create odds history")
+// 				}
+// 			}
+// 		}
+// 	}
+
+// 	return nil
+// }
+
+// processMarketsBulk handles market processing using bulk UNNEST operations for maximum performance
+func (s *EventsService) processMarketsBulk(ctx context.Context, eventID int, markets []models.IddaaMarket) error {
+	// Prepare slices for bulk operations
+	var (
+		eventIDs      []int32
+		marketTypeIDs []int32
+		outcomes      []string
+		oddsValues    []float64
+		marketParams  [][]byte
+
+		// For history tracking
+		histEventIDs      []int32
+		histMarketTypeIDs []int32
+		histOutcomes      []string
+		histOddsValues    []float64
+		histPrevValues    []float64
+		histChangeAmounts []float64
+		histChangePcts    []float64
+		histMultipliers   []float64
+		histReverseMoves  []bool
+		histSigLevels     []string
+		histMinutesToKO   []int32
+		histMarketParams  [][]byte
+	)
+
+	// Build arrays for all outcomes
+	for _, market := range markets {
+		marketTypeCode := fmt.Sprintf("%d_%d", market.Type, market.SubType)
+		marketTypeID, exists := s.marketTypes[marketTypeCode]
+		if !exists {
+			s.logger.Warn().
+				Str("code", marketTypeCode).
+				Int("event_id", eventID).
+				Msg("Unknown market type, skipping")
+			continue
+		}
+
+		params := models.ExtractMarketParams(market.SpecialValue)
+		paramsJSON, _ := json.Marshal(params)
+
+		for _, outcome := range market.Outcomes {
+			outcomeStr := s.formatOutcomeName(outcome.Name, market.SubType, market.SpecialValue)
+
+			// Add to bulk arrays
+			eventIDs = append(eventIDs, int32(eventID))
+			marketTypeIDs = append(marketTypeIDs, marketTypeID)
+			outcomes = append(outcomes, outcomeStr)
+			oddsValues = append(oddsValues, outcome.Odds)
+			marketParams = append(marketParams, paramsJSON)
+		}
+	}
+
+	// If no valid markets, return early
+	if len(eventIDs) == 0 {
+		return nil
+	}
+
+	// Get current odds for comparison (bulk query)
+	currentOddsRows, err := s.db.BulkGetCurrentOddsForComparison(ctx, generated.BulkGetCurrentOddsForComparisonParams{
+		EventIds:      eventIDs,
+		MarketTypeIds: marketTypeIDs,
+		Outcomes:      outcomes,
+	})
+	if err != nil {
+		s.logger.Warn().Err(err).Int("event_id", eventID).Msg("Failed to get current odds for comparison")
+	}
+
+	// Build map of current odds
+	type oddsKey struct {
+		eventID      int32
+		marketTypeID int32
+		outcome      string
+	}
+	currentOddsMap := make(map[oddsKey]generated.BulkGetCurrentOddsForComparisonRow)
+	for _, odd := range currentOddsRows {
+		// Skip if required fields are nil
+		if odd.EventID == nil || odd.MarketTypeID == nil {
+			continue
+		}
+		key := oddsKey{
+			eventID:      *odd.EventID,
+			marketTypeID: *odd.MarketTypeID,
+			outcome:      odd.Outcome,
+		}
+		currentOddsMap[key] = odd
+	}
+
+	// Prepare history records for odds that changed
+	for i := range eventIDs {
+		key := oddsKey{
+			eventID:      eventIDs[i],
+			marketTypeID: marketTypeIDs[i],
+			outcome:      outcomes[i],
+		}
+
+		if currentOdd, exists := currentOddsMap[key]; exists {
+			// Check if odds changed
+			if math.Abs(currentOdd.OddsValue-oddsValues[i]) > 0.001 {
+				// Calculate change metrics
+				changeAmount := oddsValues[i] - currentOdd.OddsValue
+				var changePct, multiplier float64
+
+				if currentOdd.OddsValue > 0 {
+					changePct = (changeAmount / currentOdd.OddsValue) * 100
+					multiplier = oddsValues[i] / currentOdd.OddsValue
+				} else {
+					multiplier = 1
+				}
+
+				// Determine significance level
+				var sigLevel string
+				absPct := math.Abs(changePct)
+				switch {
+				case absPct >= 20:
+					sigLevel = "extreme"
+				case absPct >= 10:
+					sigLevel = "high"
+				default:
+					sigLevel = "normal"
+				}
+
+				// Calculate minutes to kickoff
+				minutesToKO := int32(time.Until(currentOdd.EventDate.Time).Minutes())
+
+				// Add to history arrays
+				histEventIDs = append(histEventIDs, eventIDs[i])
+				histMarketTypeIDs = append(histMarketTypeIDs, marketTypeIDs[i])
+				histOutcomes = append(histOutcomes, outcomes[i])
+				histOddsValues = append(histOddsValues, oddsValues[i])
+				histPrevValues = append(histPrevValues, currentOdd.OddsValue)
+				histChangeAmounts = append(histChangeAmounts, changeAmount)
+				histChangePcts = append(histChangePcts, changePct)
+				histMultipliers = append(histMultipliers, multiplier)
+				histReverseMoves = append(histReverseMoves, false) // TODO: implement reverse movement detection
+				histSigLevels = append(histSigLevels, sigLevel)
+				histMinutesToKO = append(histMinutesToKO, minutesToKO)
+				histMarketParams = append(histMarketParams, marketParams[i])
+			}
+		}
+	}
+
+	// Bulk upsert current odds
+	err = s.db.BulkUpsertCurrentOdds(ctx, generated.BulkUpsertCurrentOddsParams{
+		EventIds:      eventIDs,
+		MarketTypeIds: marketTypeIDs,
+		Outcomes:      outcomes,
+		OddsValues:    oddsValues,
+		MarketParams:  marketParams,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to bulk upsert current odds: %w", err)
+	}
+
+	// Bulk insert history records if any odds changed
+	if len(histEventIDs) > 0 {
+		err = s.db.BulkInsertOddsHistory(ctx, generated.BulkInsertOddsHistoryParams{
+			EventIds:           histEventIDs,
+			MarketTypeIds:      histMarketTypeIDs,
+			Outcomes:           histOutcomes,
+			OddsValues:         histOddsValues,
+			PreviousValues:     histPrevValues,
+			ChangeAmounts:      histChangeAmounts,
+			ChangePercentages:  histChangePcts,
+			Multipliers:        histMultipliers,
+			IsReverseMovements: histReverseMoves,
+			SignificanceLevels: histSigLevels,
+			MinutesToKickoffs:  histMinutesToKO,
+			MarketParams:       histMarketParams,
+		})
 		if err != nil {
 			s.logger.Error().
 				Err(err).
-				Int("market_id", market.ID).
 				Int("event_id", eventID).
-				Msg("Failed to process detailed market")
+				Int("history_count", len(histEventIDs)).
+				Msg("Failed to bulk insert odds history")
 		}
 	}
+
+	s.logger.Debug().
+		Int("event_id", eventID).
+		Int("total_odds", len(eventIDs)).
+		Int("changed_odds", len(histEventIDs)).
+		Msg("Bulk processed event markets")
+
 	return nil
-}
-
-// getOrCreateMarketType gets a market type from cache or creates it in database
-func (s *EventsService) getOrCreateMarketType(ctx context.Context, marketTypeCode string, market models.IddaaMarket) (database.MarketType, error) {
-	// Check cache first
-	if cachedMarketType, exists := s.marketTypeCache[marketTypeCode]; exists {
-		return cachedMarketType, nil
-	}
-
-	// Try to get from database
-	marketType, err := s.db.GetMarketType(ctx, marketTypeCode)
-	if err == nil {
-		// Found in database, add to cache
-		s.marketTypeCache[marketTypeCode] = marketType
-		return marketType, nil
-	}
-
-	// Not found, create new market type
-	slug := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(marketTypeCode, "_", "-"), " ", "-"))
-
-	marketType, err = s.db.UpsertMarketType(ctx, database.UpsertMarketTypeParams{
-		Code:                  marketTypeCode,
-		Name:                  s.getMarketTypeName(market.SubType),
-		Slug:                  slug,
-		Description:           pgtype.Text{String: s.getMarketTypeDescription(market.SubType, market.SpecialValue), Valid: true},
-		IddaaMarketID:         pgtype.Int4{Int32: int32(market.ID), Valid: true},
-		IsLive:                pgtype.Bool{Valid: false},
-		MarketType:            pgtype.Int4{Int32: int32(market.Type), Valid: true},
-		MinMarketDefaultValue: pgtype.Int4{Valid: false},
-		MaxMarketLimitValue:   pgtype.Int4{Valid: false},
-		Priority:              pgtype.Int4{Valid: false},
-		SportType:             pgtype.Int4{Valid: false},
-		MarketSubType:         pgtype.Int4{Int32: int32(market.SubType), Valid: true},
-		MinDefaultValue:       pgtype.Int4{Valid: false},
-		MaxLimitValue:         pgtype.Int4{Valid: false},
-		IsActive:              pgtype.Bool{Bool: true, Valid: true},
-	})
-
-	if err != nil {
-		return database.MarketType{}, fmt.Errorf("failed to upsert market type: %w", err)
-	}
-
-	// Add to cache
-	s.marketTypeCache[marketTypeCode] = marketType
-	return marketType, nil
-}
-
-// preloadMarketTypeCache loads existing market types into cache on startup
-func (s *EventsService) preloadMarketTypeCache() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	marketTypes, err := s.db.ListMarketTypes(ctx)
-	if err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to preload market type cache")
-		return
-	}
-
-	for _, marketType := range marketTypes {
-		s.marketTypeCache[marketType.Code] = marketType
-	}
-
-	s.logger.Info().
-		Int("count", len(marketTypes)).
-		Msg("Market type cache preloaded successfully")
 }

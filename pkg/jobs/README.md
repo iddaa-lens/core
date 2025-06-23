@@ -9,6 +9,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ## Job List
 
 ### 1. Config Sync (`config`)
+
 - **Schedule**: `0 6 * * 1` (Weekly on Mondays at 6 AM)
 - **Purpose**: Syncs application configuration from Iddaa's content API
 - **Implementation**: `config_sync.go`
@@ -18,9 +19,10 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Test Command**: `./cron --job=config --once`
 
 ### 2. Sports Sync (`sports`)
+
 - **Schedule**: `*/30 * * * *` (Every 30 minutes)
 - **Purpose**: Keeps sports information up to date with live/upcoming event counts
-- **Implementation**: `sports_sync.go` 
+- **Implementation**: `sports_sync.go`
 - **Dependencies**: Iddaa API access
 - **API Endpoint**: `https://sportsbookv2.iddaa.com/sportsbook/info`
 - **Database Tables**: `sports`
@@ -28,6 +30,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Notes**: Foundation job - other jobs depend on sports data
 
 ### 3. Events Sync (`events`)
+
 - **Schedule**: `*/5 * * * *` (Every 5 minutes)
 - **Purpose**: Captures rapid odds movements and event data for all active sports
 - **Implementation**: `events_sync.go`
@@ -38,6 +41,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Notes**: High frequency job for real-time data capture
 
 ### 4. Volume Sync (`volume`)
+
 - **Schedule**: `*/20 * * * *` (Every 20 minutes)
 - **Purpose**: Tracks betting volume changes for all sports
 - **Implementation**: `volume_sync.go`
@@ -46,6 +50,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Test Command**: `./cron --job=volume --once`
 
 ### 5. Distribution Sync (`distribution`)
+
 - **Schedule**: `0 * * * *` (Every hour)
 - **Purpose**: Tracks betting distribution changes for all sports
 - **Implementation**: `distribution_sync.go`
@@ -54,6 +59,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Test Command**: `./cron --job=distribution --once`
 
 ### 6. Analytics Refresh (`analytics`)
+
 - **Schedule**: `0 */6 * * *` (Every 6 hours)
 - **Purpose**: Refreshes materialized views and analytics
 - **Implementation**: `analytics_refresh.go`
@@ -63,6 +69,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Notes**: Currently has issues with missing materialized views
 
 ### 7. Market Config Sync (`market_config`)
+
 - **Schedule**: `0 6 * * *` (Daily at 6 AM)
 - **Purpose**: Syncs market configurations and betting types
 - **Implementation**: `market_config_sync.go`
@@ -72,6 +79,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Notes**: Syncs 600+ market configurations
 
 ### 8. Statistics Sync (`statistics`)
+
 - **Schedule**: `*/15 8-23 * * *` (Every 15 minutes during 8 AM to 11 PM)
 - **Purpose**: Syncs event statistics for football covering European match times
 - **Implementation**: `statistics_sync.go`
@@ -81,6 +89,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 - **Notes**: Only runs during active hours, currently has JSON parsing issues
 
 ### 9. Detailed Odds Sync (`detailed_odds`)
+
 - **Schedule**: `*/2 * * * *` (Every 2 minutes)
 - **Purpose**: High-frequency detailed odds tracking for live and near-live events using individual event endpoint
 - **Implementation**: `detailed_odds_sync.go`
@@ -96,10 +105,11 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Live event prioritization for real-time tracking
 
 ### 10. Leagues Sync (`leagues`)
+
 - **Schedule**: `0 2 * * *` (Daily at 2 AM)
 - **Purpose**: Syncs leagues and teams with Football API integration and AI translation
 - **Implementation**: `leagues_sync.go`
-- **Dependencies**: 
+- **Dependencies**:
   - Iddaa API access (required)
   - `API_FOOTBALL_API_KEY` environment variable (optional)
   - `OPENAI_API_KEY` environment variable (optional)
@@ -111,6 +121,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Graceful degradation if external APIs unavailable
 
 ### 11. Smart Money Processor (`smart_money_processor`)
+
 - **Schedule**: `*/10 * * * *` (Every 10 minutes)
 - **Purpose**: Detects smart money movements by analyzing odds changes and betting patterns
 - **Implementation**: `smart_money_processor.go`
@@ -123,6 +134,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Tracks historical smart money performance
 
 ### 12. API Football League Matching (`api_football_league_matching`)
+
 - **Schedule**: `0 3 * * *` (Daily at 3 AM)
 - **Purpose**: Matches Turkish leagues with API-Football international league data
 - **Implementation**: `api_football_league_matching.go`
@@ -135,6 +147,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Creates mapping entries for data enrichment
 
 ### 13. API Football Team Matching (`api_football_team_matching`)
+
 - **Schedule**: `0 4 * * *` (Daily at 4 AM)
 - **Purpose**: Matches Turkish teams with API-Football international team data
 - **Implementation**: `api_football_team_matching.go`
@@ -147,6 +160,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Prevents duplicate mappings
 
 ### 14. API Football League Enrichment (`api_football_league_enrichment`)
+
 - **Schedule**: `0 5 * * 0` (Weekly on Sundays at 5 AM)
 - **Purpose**: Enriches league data with logos, metadata from API-Football
 - **Implementation**: `api_football_league_enrichment.go`
@@ -159,6 +173,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
   - Only processes mapped leagues
 
 ### 15. API Football Team Enrichment (`api_football_team_enrichment`)
+
 - **Schedule**: `0 6 * * 0` (Weekly on Sundays at 6 AM)
 - **Purpose**: Enriches team data with logos, venue info from API-Football
 - **Implementation**: `api_football_team_enrichment.go`
@@ -173,7 +188,9 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ## Job Dependencies
 
 ### Execution Order
+
 Jobs should typically be run in this order for initial setup:
+
 1. `sports` - Foundation data
 2. `leagues` - League/team data  
 3. `market_config` - Market configurations
@@ -191,6 +208,7 @@ Jobs should typically be run in this order for initial setup:
 15. `analytics` - Analytics refresh
 
 ### External API Dependencies
+
 - **Iddaa API**: All jobs except `analytics`, `smart_money_processor`, and API-Football enrichment jobs
 - **Football API**: `leagues`, `api_football_league_matching`, `api_football_team_matching`, `api_football_league_enrichment`, `api_football_team_enrichment`
 - **OpenAI API**: `leagues` job for translation (optional)
@@ -198,6 +216,7 @@ Jobs should typically be run in this order for initial setup:
 ## Environment Variables
 
 Required for full functionality:
+
 ```bash
 export DATABASE_URL="postgresql://user:pass@host:port/db?sslmode=disable"
 export API_FOOTBALL_API_KEY="your_API_FOOTBALL_API_KEY"  # Optional for leagues job
@@ -207,6 +226,7 @@ export OPENAI_API_KEY="your_openai_api_key"      # Optional for AI translation
 ## Testing All Jobs
 
 To test all jobs in sequence:
+
 ```bash
 export DATABASE_URL="postgresql://iddaa:iddaa123@localhost:5433/iddaa_core?sslmode=disable"
 
@@ -237,17 +257,21 @@ export DATABASE_URL="postgresql://iddaa:iddaa123@localhost:5433/iddaa_core?sslmo
 ## Production Considerations
 
 ### Anti-Bot Headers
+
 All Iddaa API jobs include comprehensive browser-like headers to prevent bot detection:
+
 - Realistic User-Agent strings
 - Standard browser headers (Sec-Ch-Ua, Sec-Fetch-*, etc.)
 - Iddaa-specific headers (Client-Transaction-Id, Platform, Timestamp)
 
 ### Error Handling
+
 - Jobs continue processing even if individual items fail
 - Comprehensive logging for troubleshooting
 - Graceful degradation when external APIs are unavailable
 
 ### Database Performance
+
 - Uses efficient upsert operations (`ON CONFLICT DO UPDATE`)
 - Bulk operations where possible
 - Transaction management for data consistency
@@ -255,6 +279,7 @@ All Iddaa API jobs include comprehensive browser-like headers to prevent bot det
 ## Monitoring
 
 Key metrics to monitor in production:
+
 - Job execution success/failure rates
 - API response times and error rates
 - Database connection pool usage
@@ -270,12 +295,14 @@ Key metrics to monitor in production:
 ## Troubleshooting
 
 ### Common Issues
+
 - **Gzip Compression**: Ensure HTTP client doesn't manually set Accept-Encoding header
 - **Database Connections**: Verify DATABASE_URL is correctly formatted
 - **API Keys**: Check environment variables are set for optional services
 - **Time Zones**: Jobs run in UTC, ensure clock synchronization
 
 ### Debug Commands
+
 ```bash
 # Test individual job with verbose logging
 ./cron --job=sports --once

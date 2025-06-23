@@ -8,20 +8,20 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/models"
 )
 
 // BulkLeagueMatcherService handles bulk league matching using AI
 type BulkLeagueMatcherService struct {
-	db           *database.Queries
+	db           *generated.Queries
 	client       *http.Client
 	footballKey  string
 	aiTranslator *AITranslationService
 }
 
 // NewBulkLeagueMatcherService creates a new bulk league matcher
-func NewBulkLeagueMatcherService(db *database.Queries, client *http.Client, footballKey string, aiTranslator *AITranslationService) *BulkLeagueMatcherService {
+func NewBulkLeagueMatcherService(db *generated.Queries, client *http.Client, footballKey string, aiTranslator *AITranslationService) *BulkLeagueMatcherService {
 	return &BulkLeagueMatcherService{
 		db:           db,
 		client:       client,
@@ -105,44 +105,67 @@ func (s *BulkLeagueMatcherService) getAllFootballAPILeagues(ctx context.Context)
 }
 
 // generateMappingsWithAI uses AI to analyze both datasets and generate INSERT statements
-func (s *BulkLeagueMatcherService) generateMappingsWithAI(ctx context.Context, unmappedLeagues []database.League, footballAPILeagues []models.FootballAPILeagueData) ([]string, error) {
+func (s *BulkLeagueMatcherService) generateMappingsWithAI(ctx context.Context, unmappedLeagues []generated.League, footballAPILeagues []models.FootballAPILeagueData) ([]string, error) {
 	if s.aiTranslator == nil {
 		return nil, fmt.Errorf("AI translator not available")
 	}
 
-	// Prepare the data for AI analysis
-	prompt := s.createBulkMappingPrompt(unmappedLeagues, footballAPILeagues)
+	var allInsertStatements []string
 
-	// Call AI to generate the mappings
-	response, err := s.aiTranslator.CallOpenAI(ctx, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("AI mapping generation failed: %w", err)
+	// Process unmapped leagues in batches to avoid token limits
+	batchSize := 10 // Process 10 leagues at a time
+	for i := 0; i < len(unmappedLeagues); i += batchSize {
+		end := i + batchSize
+		if end > len(unmappedLeagues) {
+			end = len(unmappedLeagues)
+		}
+
+		batch := unmappedLeagues[i:end]
+		log.Printf("Processing batch %d-%d of %d leagues", i+1, end, len(unmappedLeagues))
+
+		// Prepare the data for AI analysis
+		prompt := s.createBulkMappingPrompt(batch, footballAPILeagues)
+
+		// Call AI to generate the mappings
+		response, err := s.aiTranslator.CallOpenAI(ctx, prompt)
+		if err != nil {
+			log.Printf("Warning: AI mapping failed for batch %d-%d: %v", i+1, end, err)
+			continue // Skip this batch and continue with the next
+		}
+
+		// Parse the response to extract INSERT statements
+		statements, err := s.parseAIResponse(response)
+		if err != nil {
+			log.Printf("Warning: Failed to parse AI response for batch %d-%d: %v", i+1, end, err)
+			continue
+		}
+
+		allInsertStatements = append(allInsertStatements, statements...)
 	}
 
-	// Parse the response to extract INSERT statements
-	return s.parseAIResponse(response)
+	return allInsertStatements, nil
 }
 
 // createBulkMappingPrompt creates a comprehensive prompt for AI league matching
-func (s *BulkLeagueMatcherService) createBulkMappingPrompt(unmappedLeagues []database.League, footballAPILeagues []models.FootballAPILeagueData) string {
+func (s *BulkLeagueMatcherService) createBulkMappingPrompt(unmappedLeagues []generated.League, footballAPILeagues []models.FootballAPILeagueData) string {
 	// Build Turkish leagues list
 	var turkishLeagues strings.Builder
 	turkishLeagues.WriteString("TURKISH LEAGUES TO MAP:\n")
 	for _, league := range unmappedLeagues {
 		country := "Unknown"
-		if league.Country.Valid {
-			country = league.Country.String
+		if league.Country != nil {
+			country = *league.Country
 		}
 		turkishLeagues.WriteString(fmt.Sprintf("ID: %d, Name: \"%s\", Country: %s\n",
 			league.ID, league.Name, country))
 	}
 
-	// Build Football API leagues list (sample first 200 to avoid token limits)
+	// Build Football API leagues list (sample first 100 to avoid token limits)
 	var footballLeagues strings.Builder
 	footballLeagues.WriteString("\nFOOTBALL API LEAGUES AVAILABLE:\n")
 	maxLeagues := len(footballAPILeagues)
-	if maxLeagues > 200 {
-		maxLeagues = 200
+	if maxLeagues > 100 {
+		maxLeagues = 100
 	}
 	for i := 0; i < maxLeagues; i++ {
 		league := footballAPILeagues[i]

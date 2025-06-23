@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 )
 
@@ -31,7 +31,7 @@ type ProductionJobManagerConfig struct {
 }
 
 // NewProductionJobManager creates a production-ready job manager with distributed locking
-func NewProductionJobManager(db database.DBTX, config *ProductionJobManagerConfig) JobManager {
+func NewProductionJobManager(db generated.DBTX, config *ProductionJobManagerConfig) JobManager {
 	if config == nil {
 		config = &ProductionJobManagerConfig{
 			EnableLocking: true,

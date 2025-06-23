@@ -294,8 +294,8 @@ func (o *TeamSearchOptions) WithSearch(search string) *TeamSearchOptions {
 // Team statistics and information helpers
 
 // GetTeamStatistics returns a summary of team information
-func GetTeamStatistics(teamData models.FootballAPITeamData) map[string]interface{} {
-	return map[string]interface{}{
+func GetTeamStatistics(teamData models.FootballAPITeamData) map[string]any {
+	return map[string]any{
 		"id":             teamData.Team.ID,
 		"name":           teamData.Team.Name,
 		"code":           teamData.Team.Code,

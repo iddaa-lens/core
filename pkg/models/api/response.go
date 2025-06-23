@@ -56,9 +56,9 @@ type BigMoverResponse struct {
 	EventTime            time.Time `json:"event_time"`
 	EventStatus          string    `json:"event_status"`
 	IsLive               bool      `json:"is_live"`
-	HomeScore            *int32    `json:"home_score,omitempty"`
-	AwayScore            *int32    `json:"away_score,omitempty"`
-	MinuteOfMatch        *int32    `json:"minute_of_match,omitempty"`
+	HomeScore            *int64    `json:"home_score,omitempty"`
+	AwayScore            *int64    `json:"away_score,omitempty"`
+	MinuteOfMatch        *int64    `json:"minute_of_match,omitempty"`
 	BettingVolumePercent *float64  `json:"betting_volume_percent,omitempty"`
 	HomeTeamCountry      string    `json:"home_team_country"`
 	AwayTeamCountry      string    `json:"away_team_country"`

@@ -7,8 +7,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/iddaa-lens/core/internal/config"
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
+	"github.com/iddaa-lens/core/pkg/database/pool"
 	"github.com/iddaa-lens/core/pkg/handlers/events"
 	"github.com/iddaa-lens/core/pkg/handlers/health"
 	"github.com/iddaa-lens/core/pkg/handlers/leagues"
@@ -18,7 +21,6 @@ import (
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/middleware"
 	"github.com/iddaa-lens/core/pkg/services"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Server represents the API server
@@ -27,7 +29,7 @@ type Server struct {
 	port     string
 	logger   *logger.Logger
 	dbPool   *pgxpool.Pool
-	queries  *database.Queries
+	queries  *generated.Queries
 	handlers struct {
 		health     *health.Handler
 		events     *events.Handler
@@ -46,10 +48,11 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 		port = "8080"
 	}
 
-	// Initialize database connection pool with production settings
-	dbPool, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
+	// Initialize database connection pool with optimized production settings
+	poolConfig := pool.DefaultConfig()
+	dbPool, err := pool.New(context.Background(), cfg.DatabaseURL(), poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("failed to create database pool: %w", err)
 	}
 
 	// Test database connection with retry logic
@@ -59,7 +62,7 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	}
 
 	// Create queries instance
-	queries := database.New(dbPool)
+	queries := generated.New(dbPool)
 
 	// Create server instance
 	server := &Server{

@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,13 +16,13 @@ import (
 
 // APIFootballLeagueEnrichmentJob enriches league data with detailed API-Football information
 type APIFootballLeagueEnrichmentJob struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *http.Client
 	apiKey string
 }
 
 // NewAPIFootballLeagueEnrichmentJob creates a new league enrichment job
-func NewAPIFootballLeagueEnrichmentJob(db *database.Queries) *APIFootballLeagueEnrichmentJob {
+func NewAPIFootballLeagueEnrichmentJob(db *generated.Queries) *APIFootballLeagueEnrichmentJob {
 	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
 
 	return &APIFootballLeagueEnrichmentJob{
@@ -207,7 +207,7 @@ func (j *APIFootballLeagueEnrichmentJob) fetchLeagueDetails(ctx context.Context,
 }
 
 // enrichLeague updates the league with API-Football data
-func (j *APIFootballLeagueEnrichmentJob) enrichLeague(ctx context.Context, league database.League, apiData *models.APIFootballLeagueDetail) error {
+func (j *APIFootballLeagueEnrichmentJob) enrichLeague(ctx context.Context, league generated.League, apiData *models.APIFootballLeagueDetail) error {
 	// Find the current season (most recent or explicitly marked as current)
 	var currentSeason *models.Season
 	for i := range apiData.Seasons {
@@ -256,25 +256,43 @@ func (j *APIFootballLeagueEnrichmentJob) enrichLeague(ctx context.Context, leagu
 	}
 
 	// Update the league with enrichment data
-	_, err = j.db.EnrichLeagueWithAPIFootball(ctx, database.EnrichLeagueWithAPIFootballParams{
-		ID:                 league.ID,
-		ApiFootballID:      pgtype.Int4{Int32: int32(apiData.League.ID), Valid: true},
-		LeagueType:         pgtype.Text{String: apiData.League.Type, Valid: true},
-		LogoUrl:            pgtype.Text{String: apiData.League.Logo, Valid: apiData.League.Logo != ""},
-		CountryCode:        pgtype.Text{String: apiData.Country.Code, Valid: apiData.Country.Code != ""},
-		CountryFlagUrl:     pgtype.Text{String: apiData.Country.Flag, Valid: apiData.Country.Flag != ""},
-		HasStandings:       pgtype.Bool{Bool: hasStandings, Valid: true},
-		HasFixtures:        pgtype.Bool{Bool: hasFixtures, Valid: true},
-		HasPlayers:         pgtype.Bool{Bool: hasPlayers, Valid: true},
-		HasTopScorers:      pgtype.Bool{Bool: hasTopScorers, Valid: true},
-		HasInjuries:        pgtype.Bool{Bool: hasInjuries, Valid: true},
-		HasPredictions:     pgtype.Bool{Bool: hasPredictions, Valid: true},
-		HasOdds:            pgtype.Bool{Bool: hasOdds, Valid: true},
-		CurrentSeasonYear:  pgtype.Int4{Int32: *currentSeasonYear, Valid: currentSeasonYear != nil},
-		CurrentSeasonStart: pgtype.Date{Time: *currentSeasonStart, Valid: currentSeasonStart != nil},
-		CurrentSeasonEnd:   pgtype.Date{Time: *currentSeasonEnd, Valid: currentSeasonEnd != nil},
-		ApiEnrichmentData:  apiDataJSON,
-	})
+	apiFootballID := int32(apiData.League.ID)
+
+	// Set optional fields conditionally
+	params := generated.EnrichLeagueWithAPIFootballParams{
+		ID:                league.ID,
+		ApiFootballID:     &apiFootballID,
+		LeagueType:        &apiData.League.Type,
+		HasStandings:      &hasStandings,
+		HasFixtures:       &hasFixtures,
+		HasPlayers:        &hasPlayers,
+		HasTopScorers:     &hasTopScorers,
+		HasInjuries:       &hasInjuries,
+		HasPredictions:    &hasPredictions,
+		HasOdds:           &hasOdds,
+		CurrentSeasonYear: currentSeasonYear,
+		ApiEnrichmentData: apiDataJSON,
+	}
+
+	// Convert time.Time to pgtype.Date for season dates
+	if currentSeasonStart != nil {
+		params.CurrentSeasonStart = pgtype.Date{Time: *currentSeasonStart, Valid: true}
+	}
+	if currentSeasonEnd != nil {
+		params.CurrentSeasonEnd = pgtype.Date{Time: *currentSeasonEnd, Valid: true}
+	}
+
+	if apiData.League.Logo != "" {
+		params.LogoUrl = &apiData.League.Logo
+	}
+	if apiData.Country.Code != "" {
+		params.CountryCode = &apiData.Country.Code
+	}
+	if apiData.Country.Flag != "" {
+		params.CountryFlagUrl = &apiData.Country.Flag
+	}
+
+	_, err = j.db.EnrichLeagueWithAPIFootball(ctx, params)
 
 	return err
 }

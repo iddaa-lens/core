@@ -70,7 +70,7 @@ type IddaaSportInfo struct {
 	OddsCount         int  `json:"oc"` // Odds count
 	HasResults        bool `json:"hr"` // Has results
 	HasKingOdd        bool `json:"hk"` // Has king odd
-	HasDigitalContent bool `json:"hd"` // Has digital content
+	HasDigitalContent bool `json:"hd"` // Has digital content.
 }
 
 // IddaaMarketConfigResponse represents the response from get_market_config endpoint

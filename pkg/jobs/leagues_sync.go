@@ -3,36 +3,21 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/services"
 )
 
 type LeaguesSyncJob struct {
-	db             *database.Queries
+	db             *generated.Queries
 	leaguesService *services.LeaguesService
 }
 
-func NewLeaguesSyncJob(db *database.Queries, iddaaClient *services.IddaaClient) *LeaguesSyncJob {
-	// Get Football API key from environment
-	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
-	// Note: Missing API keys will be logged when job executes
-
-	// Get OpenAI API key from environment
-	openaiKey := os.Getenv("OPENAI_API_KEY")
-	// Note: Missing API keys will be logged when job executes
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	// Create leagues service
-	leaguesService := services.NewLeaguesService(db, client, apiKey, iddaaClient, openaiKey)
+func NewLeaguesSyncJob(db *generated.Queries, iddaaClient *services.IddaaClient) *LeaguesSyncJob {
+	// Create leagues service (only needs db and iddaaClient for Iddaa sync)
+	leaguesService := services.NewLeaguesService(db, nil, "", iddaaClient, "")
 
 	return &LeaguesSyncJob{
 		db:             db,
@@ -45,7 +30,7 @@ func (j *LeaguesSyncJob) Name() string {
 }
 
 func (j *LeaguesSyncJob) Description() string {
-	return "Syncs leagues and teams with Football API"
+	return "Syncs leagues from Iddaa API"
 }
 
 func (j *LeaguesSyncJob) Schedule() string {
@@ -91,68 +76,12 @@ func (j *LeaguesSyncJob) Execute(ctx context.Context) error {
 		Dur("duration", time.Since(stepStart)).
 		Msg("Iddaa leagues sync completed")
 
-	// Step 2: Check if Football API key is available for additional enrichment
-	apiKey := os.Getenv("API_FOOTBALL_API_KEY")
-	if apiKey == "" {
-		log.Warn().
-			Str("action", "api_key_missing").
-			Str("api", "football_api").
-			Msg("API_FOOTBALL_API_KEY not set, skipping Football API sync")
+	// Football API league matching has been moved to the dedicated api_football_league_matching job
+	// This improves separation of concerns and rate limit management
+	// The api_football_league_matching job runs weekly on Tuesdays at 3 AM
 
-		duration := time.Since(start)
-		log.LogJobComplete("leagues_sync", duration, completedSteps, errorCount)
-		return nil
-	}
-
-	// Step 3: Sync leagues with Football API for mapping
-	stepStart = time.Now()
-	log.Info().
-		Str("action", "step_start").
-		Str("step", "football_api_leagues").
-		Msg("Syncing leagues with Football API")
-
-	if err := j.leaguesService.SyncLeaguesWithFootballAPI(ctx); err != nil {
-		errorCount++
-		log.Error().
-			Err(err).
-			Str("action", "step_failed").
-			Str("step", "football_api_leagues").
-			Dur("duration", time.Since(stepStart)).
-			Msg("Error syncing leagues with Football API")
-		// Don't fail the entire job, Iddaa sync was successful
-	} else {
-		completedSteps++
-		log.Info().
-			Str("action", "step_complete").
-			Str("step", "football_api_leagues").
-			Dur("duration", time.Since(stepStart)).
-			Msg("Football API leagues sync completed")
-	}
-
-	// Step 4: Sync teams (only for leagues that are already mapped)
-	stepStart = time.Now()
-	log.Info().
-		Str("action", "step_start").
-		Str("step", "football_api_teams").
-		Msg("Syncing teams with Football API")
-
-	if err := j.leaguesService.SyncTeamsWithFootballAPI(ctx); err != nil {
-		errorCount++
-		log.Error().
-			Err(err).
-			Str("action", "step_failed").
-			Str("step", "football_api_teams").
-			Dur("duration", time.Since(stepStart)).
-			Msg("Error syncing teams with Football API")
-		// Don't fail the entire job, Iddaa sync was successful
-	} else {
-		completedSteps++
-		log.Info().
-			Str("action", "step_complete").
-			Str("step", "football_api_teams").
-			Dur("duration", time.Since(stepStart)).
-			Msg("Football API teams sync completed")
-	}
+	// Team syncing has been moved to the dedicated api_football_team_matching job
+	// The api_football_team_matching job runs weekly on Tuesdays at 4 AM
 
 	duration := time.Since(start)
 	log.LogJobComplete("leagues_sync", duration, completedSteps, errorCount)

@@ -5,18 +5,17 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models/api"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Handler struct {
-	queries *database.Queries
+	queries *generated.Queries
 	logger  *logger.Logger
 }
 
-func NewHandler(queries *database.Queries, logger *logger.Logger) *Handler {
+func NewHandler(queries *generated.Queries, logger *logger.Logger) *Handler {
 	return &Handler{
 		queries: queries,
 		logger:  logger,
@@ -24,7 +23,7 @@ func NewHandler(queries *database.Queries, logger *logger.Logger) *Handler {
 }
 
 type TeamWithMapping struct {
-	database.Team
+	generated.Team
 	IsMapped bool `json:"is_mapped"`
 }
 
@@ -35,7 +34,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	notMapped := r.URL.Query().Get("not_mapped") == "true"
 
-	var teams []database.Team
+	var teams []generated.Team
 	var err error
 
 	if notMapped {
@@ -43,8 +42,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		teams, err = h.queries.ListUnmappedTeams(ctx)
 	} else {
 		// Get all teams (you may want to implement pagination here)
-		teams, err = h.queries.SearchTeams(ctx, database.SearchTeamsParams{
-			SearchTerm: pgtype.Text{String: "", Valid: true},
+		emptyString := ""
+		teams, err = h.queries.SearchTeams(ctx, generated.SearchTeamsParams{
+			SearchTerm: &emptyString,
 			LimitCount: 1000, // Set a reasonable default limit
 		})
 	}
@@ -60,7 +60,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for _, team := range teams {
 		teamWithMapping := TeamWithMapping{
 			Team:     team,
-			IsMapped: team.ApiFootballID.Valid,
+			IsMapped: team.ApiFootballID != nil,
 		}
 		response = append(response, teamWithMapping)
 	}
@@ -69,7 +69,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(api.Response{
 		Success: true,
 		Data:    response,
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"total": len(response),
 		},
 	}); err != nil {
@@ -105,12 +105,9 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update team with API Football ID
-	err = h.queries.UpdateTeamApiFootballID(ctx, database.UpdateTeamApiFootballIDParams{
-		ID: int32(teamID),
-		ApiFootballID: pgtype.Int4{
-			Int32: req.ApiFootballID,
-			Valid: true,
-		},
+	err = h.queries.UpdateTeamApiFootballID(ctx, generated.UpdateTeamApiFootballIDParams{
+		ID:            int32(teamID),
+		ApiFootballID: &req.ApiFootballID,
 	})
 
 	if err != nil {
@@ -120,16 +117,11 @@ func (h *Handler) UpdateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also create/update team mapping record
-	_, err = h.queries.UpsertTeamMapping(ctx, database.UpsertTeamMappingParams{
+	_, err = h.queries.UpsertTeamMapping(ctx, generated.UpsertTeamMappingParams{
 		InternalTeamID:    int32(teamID),
 		FootballApiTeamID: req.ApiFootballID,
-		Confidence: pgtype.Numeric{
-			Int:   nil, // Will be set to a default value by the database
-			Exp:   0,
-			NaN:   false,
-			Valid: true,
-		},
-		MappingMethod: "manual",
+		Confidence:        1.0,
+		MappingMethod:     "manual",
 	})
 
 	if err != nil {

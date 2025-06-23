@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 )
 
@@ -28,12 +28,12 @@ type JobLockManager interface {
 
 // PostgreSQLLockManager implements distributed locking using PostgreSQL advisory locks
 type PostgreSQLLockManager struct {
-	db     database.DBTX
+	db     generated.DBTX
 	logger *logger.Logger
 }
 
 // NewPostgreSQLLockManager creates a new PostgreSQL-based lock manager
-func NewPostgreSQLLockManager(db database.DBTX) JobLockManager {
+func NewPostgreSQLLockManager(db generated.DBTX) JobLockManager {
 	return &PostgreSQLLockManager{
 		db:     db,
 		logger: logger.New("job-lock-manager"),

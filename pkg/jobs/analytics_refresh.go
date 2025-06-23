@@ -4,15 +4,15 @@ import (
 	"context"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 type AnalyticsRefreshJob struct {
-	db *database.Queries
+	db *generated.Queries
 }
 
-func NewAnalyticsRefreshJob(db *database.Queries) Job {
+func NewAnalyticsRefreshJob(db *generated.Queries) Job {
 	return &AnalyticsRefreshJob{
 		db: db,
 	}
@@ -33,41 +33,64 @@ func (j *AnalyticsRefreshJob) Execute(ctx context.Context) error {
 	errorCount := 0
 	refreshedViews := 0
 
-	// Refresh materialized views for better performance
-	viewStart := time.Now()
-	log.Debug().
-		Str("action", "view_refresh_start").
-		Str("view_name", "contrarian_bets").
-		Msg("Refreshing materialized view")
-
-	err := j.db.RefreshContrarianBets(ctx)
-	if err != nil {
-		errorCount++
-		log.Error().
-			Err(err).
-			Str("action", "view_refresh_failed").
-			Str("view_name", "contrarian_bets").
-			Dur("duration", time.Since(viewStart)).
-			Msg("Failed to refresh contrarian bets view")
-		// Continue with other refreshes even if one fails
-	} else {
-		refreshedViews++
-		log.Debug().
-			Str("action", "view_refresh_complete").
-			Str("view_name", "contrarian_bets").
-			Dur("duration", time.Since(viewStart)).
-			Msg("Contrarian bets view refreshed")
+	// List of all materialized views to refresh
+	views := []struct {
+		name    string
+		refresh func(context.Context) error
+	}{
+		{"contrarian_bets", j.db.RefreshContrarianBets},
+		{"big_movers", j.db.RefreshBigMovers},
+		{"sharp_money_moves", j.db.RefreshSharpMoneyMoves},
+		{"live_opportunities", j.db.RefreshLiveOpportunities},
+		{"value_spots", j.db.RefreshValueSpots},
+		{"high_volume_events", j.db.RefreshHighVolumeEvents},
 	}
 
-	// Note: volume_trends materialized view doesn't have a specific refresh function
-	// in our current queries, but we could add one if needed
+	// Refresh each materialized view
+	for _, view := range views {
+		viewStart := time.Now()
+		log.Debug().
+			Str("action", "view_refresh_start").
+			Str("view_name", view.name).
+			Msg("Refreshing materialized view")
+
+		err := view.refresh(ctx)
+		if err != nil {
+			errorCount++
+			log.Error().
+				Err(err).
+				Str("action", "view_refresh_failed").
+				Str("view_name", view.name).
+				Dur("duration", time.Since(viewStart)).
+				Msg("Failed to refresh materialized view")
+			// Continue with other views even if one fails
+		} else {
+			refreshedViews++
+			log.Debug().
+				Str("action", "view_refresh_complete").
+				Str("view_name", view.name).
+				Dur("duration", time.Since(viewStart)).
+				Msg("Materialized view refreshed successfully")
+		}
+	}
+
+	// Log summary
+	log.Info().
+		Str("action", "refresh_summary").
+		Int("total_views", len(views)).
+		Int("refreshed_successfully", refreshedViews).
+		Int("failed_refreshes", errorCount).
+		Msg("Analytics refresh completed")
 
 	duration := time.Since(start)
 	log.LogJobComplete("analytics_refresh", duration, refreshedViews, errorCount)
+
+	// Return nil even if some views failed - we logged the errors above
+	// This allows the job to continue running on schedule
 	return nil
 }
 
 func (j *AnalyticsRefreshJob) Schedule() string {
-	// Run every 6 hours to refresh materialized views and analytics
-	return "0 */6 * * *"
+	// Run every 5 minutes to keep materialized views fresh
+	return "*/5 * * * *"
 }

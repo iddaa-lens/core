@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/joho/godotenv"
 
 	"github.com/iddaa-lens/core/internal/config"
 	"github.com/iddaa-lens/core/pkg/logger"
@@ -10,6 +13,14 @@ import (
 )
 
 func main() {
+	// Load .env file if it exists
+	envPath := filepath.Join(".", ".env")
+	if _, err := os.Stat(envPath); err == nil {
+		if err := godotenv.Load(envPath); err != nil {
+			// Log but don't fail - env vars might be set elsewhere
+			fmt.Printf("Warning: Failed to load .env file: %v\n", err)
+		}
+	}
 	// Handle health check flag for Docker health checks
 	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
 		// Simple health check - just exit with 0 if the binary can run

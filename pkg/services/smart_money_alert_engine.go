@@ -7,17 +7,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iddaa-lens/core/pkg/database"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 )
 
 // calculateSmartMoneyIndicators analyzes an odds movement for smart money patterns
-func (smt *SmartMoneyTracker) calculateSmartMoneyIndicators(ctx context.Context, oddsHistory database.OddsHistory, changePercent, multiplier float64) SmartMoneyIndicators {
+func (smt *SmartMoneyTracker) calculateSmartMoneyIndicators(ctx context.Context, oddsHistory generated.OddsHistory, changePercent, multiplier float64) SmartMoneyIndicators {
 	indicators := SmartMoneyIndicators{}
 
 	// Get event information for timing analysis
-	if oddsHistory.EventID.Valid {
-		event, err := smt.db.GetEventByID(ctx, oddsHistory.EventID.Int32)
+	if oddsHistory.EventID != nil {
+		event, err := smt.db.GetEventByID(ctx, *oddsHistory.EventID)
 		if err == nil && event.EventDate.Valid {
 			minutesToKickoff := time.Until(event.EventDate.Time).Minutes()
 
@@ -90,59 +89,57 @@ func (smt *SmartMoneyTracker) calculateSmartMoneyIndicators(ctx context.Context,
 }
 
 // isCounterPublicMovement checks if movement goes against typical public patterns
-func (smt *SmartMoneyTracker) isCounterPublicMovement(ctx context.Context, oddsHistory database.OddsHistory, changePercent float64) bool {
-	if !oddsHistory.PreviousValue.Valid {
+func (smt *SmartMoneyTracker) isCounterPublicMovement(ctx context.Context, oddsHistory generated.OddsHistory, changePercent float64) bool {
+	if oddsHistory.PreviousValue == nil {
 		return false
 	}
 
-	prevOddsFloat, _ := oddsHistory.PreviousValue.Float64Value()
-	if !prevOddsFloat.Valid {
+	prevOdds := *oddsHistory.PreviousValue
+	if prevOdds == 0 {
 		return false
 	}
-
-	previousOdds := prevOddsFloat.Float64
 
 	// Favorites getting longer odds (public loves favorites)
-	if previousOdds < 2.0 && changePercent > 0 {
+	if prevOdds < 2.0 && changePercent > 0 {
 		return true
 	}
 
 	// Big underdogs getting shorter odds (public avoids big underdogs)
-	if previousOdds > 5.0 && changePercent < 0 {
+	if prevOdds > 5.0 && changePercent < 0 {
 		return true
 	}
 
 	// Market-specific patterns for different bet types
-	if oddsHistory.MarketTypeID.Valid {
+	if oddsHistory.MarketTypeID != nil {
 		// Get market type to check for specific patterns
-		marketType, err := smt.db.GetMarketTypeByID(ctx, oddsHistory.MarketTypeID.Int32)
+		marketType, err := smt.db.GetMarketTypeByID(ctx, *oddsHistory.MarketTypeID)
 		if err == nil {
 			marketCode := strings.ToLower(marketType.Code)
 
 			// Over/Under patterns - public typically loves overs
 			if strings.Contains(marketCode, "over") || strings.Contains(marketCode, "alt") {
-				if previousOdds > 1.9 && changePercent > 0 { // Over getting longer odds
+				if prevOdds > 1.9 && changePercent > 0 { // Over getting longer odds
 					return true
 				}
 			}
 
 			// Under patterns - public typically avoids unders
 			if strings.Contains(marketCode, "under") {
-				if previousOdds > 2.5 && changePercent < 0 { // Under getting shorter odds
+				if prevOdds > 2.5 && changePercent < 0 { // Under getting shorter odds
 					return true
 				}
 			}
 
 			// Draw patterns - public typically avoids draws in close matches
 			if strings.Contains(marketCode, "draw") || oddsHistory.Outcome == "X" {
-				if previousOdds > 3.0 && changePercent < 0 { // Draw getting shorter odds
+				if prevOdds > 3.0 && changePercent < 0 { // Draw getting shorter odds
 					return true
 				}
 			}
 
 			// Double chance patterns - public loves "safer" bets
 			if strings.Contains(marketCode, "double") {
-				if previousOdds > 1.8 && changePercent > 0 { // Double chance getting longer odds
+				if prevOdds > 1.8 && changePercent > 0 { // Double chance getting longer odds
 					return true
 				}
 			}
@@ -153,15 +150,15 @@ func (smt *SmartMoneyTracker) isCounterPublicMovement(ctx context.Context, oddsH
 }
 
 // analyzeVolumeDirection compares odds movement with volume patterns
-func (smt *SmartMoneyTracker) analyzeVolumeDirection(ctx context.Context, oddsHistory database.OddsHistory, changePercent float64) string {
-	if !oddsHistory.EventID.Valid || !oddsHistory.MarketTypeID.Valid {
+func (smt *SmartMoneyTracker) analyzeVolumeDirection(ctx context.Context, oddsHistory generated.OddsHistory, changePercent float64) string {
+	if oddsHistory.EventID == nil || oddsHistory.MarketTypeID == nil {
 		return "neutral"
 	}
 
 	// Get outcome distribution to analyze public betting patterns
-	distribution, err := smt.db.GetLatestOutcomeDistribution(ctx, database.GetLatestOutcomeDistributionParams{
+	distribution, err := smt.db.GetLatestOutcomeDistribution(ctx, generated.GetLatestOutcomeDistributionParams{
 		EventID:  oddsHistory.EventID,
-		MarketID: oddsHistory.MarketTypeID.Int32,
+		MarketID: *oddsHistory.MarketTypeID,
 		Outcome:  oddsHistory.Outcome,
 	})
 
@@ -171,42 +168,36 @@ func (smt *SmartMoneyTracker) analyzeVolumeDirection(ctx context.Context, oddsHi
 
 	// Analyze betting percentage vs odds movement
 	// If public is betting heavily (>60%) but odds are moving away from them, it's reverse line movement
-	if distribution.BetPercentage.Valid {
-		betPercentageFloat, err := distribution.BetPercentage.Float64Value()
-		if err == nil && betPercentageFloat.Valid {
-			betPct := betPercentageFloat.Float64
 
-			// High public betting but odds moving against them (sharp money)
-			if betPct > 60 && changePercent > 0 { // Public loves it, odds getting worse
-				return "against_movement"
-			}
-			if betPct < 30 && changePercent < 0 { // Public avoids it, odds getting better
-				return "against_movement"
-			}
+	// High public betting but odds moving against them (sharp money)
+	if distribution.BetPercentage > 60 && changePercent > 0 { // Public loves it, odds getting worse
+		return "against_movement"
+	}
+	if distribution.BetPercentage < 30 && changePercent < 0 { // Public avoids it, odds getting better
+		return "against_movement"
+	}
 
-			// Movement with public sentiment
-			if betPct > 60 && changePercent < 0 { // Public loves it, odds getting better
-				return "with_movement"
-			}
-			if betPct < 30 && changePercent > 0 { // Public avoids it, odds getting worse
-				return "with_movement"
-			}
-		}
+	// Movement with public sentiment
+	if distribution.BetPercentage > 60 && changePercent < 0 { // Public loves it, odds getting better
+		return "with_movement"
+	}
+	if distribution.BetPercentage < 30 && changePercent > 0 { // Public avoids it, odds getting worse
+		return "with_movement"
 	}
 
 	return "neutral"
 }
 
 // calculatePublicBias compares betting percentages with implied probability
-func (smt *SmartMoneyTracker) calculatePublicBias(ctx context.Context, oddsHistory database.OddsHistory) float64 {
-	if !oddsHistory.EventID.Valid || !oddsHistory.MarketTypeID.Valid {
+func (smt *SmartMoneyTracker) calculatePublicBias(ctx context.Context, oddsHistory generated.OddsHistory) float64 {
+	if oddsHistory.EventID == nil || oddsHistory.MarketTypeID == nil {
 		return 0.0
 	}
 
 	// Get outcome distribution data
-	distribution, err := smt.db.GetLatestOutcomeDistribution(ctx, database.GetLatestOutcomeDistributionParams{
+	distribution, err := smt.db.GetLatestOutcomeDistribution(ctx, generated.GetLatestOutcomeDistributionParams{
 		EventID:  oddsHistory.EventID,
-		MarketID: oddsHistory.MarketTypeID.Int32,
+		MarketID: *oddsHistory.MarketTypeID,
 		Outcome:  oddsHistory.Outcome,
 	})
 
@@ -215,28 +206,22 @@ func (smt *SmartMoneyTracker) calculatePublicBias(ctx context.Context, oddsHisto
 	}
 
 	// Calculate bias: betting percentage - implied probability
-	if distribution.BetPercentage.Valid && distribution.ImpliedProbability.Valid {
-		betPercentageFloat, err1 := distribution.BetPercentage.Float64Value()
-		impliedProbFloat, err2 := distribution.ImpliedProbability.Float64Value()
-
-		if err1 == nil && err2 == nil && betPercentageFloat.Valid && impliedProbFloat.Valid {
-			bias := betPercentageFloat.Float64 - impliedProbFloat.Float64
-			return bias
-		}
-	}
-
-	return 0.0
+	bias := float64(distribution.BetPercentage) - float64(*distribution.ImpliedProbability)
+	return bias
 }
 
 // createBigMoverAlert creates an alert for significant odds movements
-func (smt *SmartMoneyTracker) createBigMoverAlert(ctx context.Context, oddsHistoryID int64, oddsHistory database.OddsHistory, changePercent, multiplier float64) error {
+func (smt *SmartMoneyTracker) createBigMoverAlert(ctx context.Context, oddsHistoryID int64, oddsHistory generated.OddsHistory, changePercent, multiplier float64) error {
 	severity := "medium"
 	if math.Abs(changePercent) >= smt.massiveMoverThreshold || multiplier >= 3.0 {
 		severity = "high"
 	}
 
 	// Get team names for alert message
-	teamInfo := smt.getTeamInfo(ctx, oddsHistory.EventID.Int32)
+	teamInfo := teamInfo{}
+	if oddsHistory.EventID != nil {
+		teamInfo = smt.getTeamInfo(ctx, *oddsHistory.EventID)
+	}
 
 	direction := "up"
 	emoji := "📈"
@@ -250,108 +235,124 @@ func (smt *SmartMoneyTracker) createBigMoverAlert(ctx context.Context, oddsHisto
 		emoji, teamInfo.matchName, oddsHistory.Outcome, direction, math.Abs(changePercent), multiplier)
 
 	// Calculate minutes to kickoff
-	minutesToKickoff := smt.getMinutesToKickoff(ctx, oddsHistory.EventID.Int32)
+	minutesToKickoff := smt.getMinutesToKickoff(ctx, *oddsHistory.EventID)
 
 	return smt.createAlert(ctx, oddsHistoryID, "big_mover", severity, title, message, changePercent, multiplier, 0.5, minutesToKickoff)
 }
 
 // createReverseLineAlert creates an alert for reverse line movements
-func (smt *SmartMoneyTracker) createReverseLineAlert(ctx context.Context, oddsHistoryID int64, oddsHistory database.OddsHistory, indicators SmartMoneyIndicators) error {
-	teamInfo := smt.getTeamInfo(ctx, oddsHistory.EventID.Int32)
+func (smt *SmartMoneyTracker) createReverseLineAlert(ctx context.Context, oddsHistoryID int64, oddsHistory generated.OddsHistory, indicators SmartMoneyIndicators) error {
+	teamInfo := teamInfo{}
+	if oddsHistory.EventID != nil {
+		teamInfo = smt.getTeamInfo(ctx, *oddsHistory.EventID)
+	}
 
 	title := fmt.Sprintf("Reverse Line Movement: %s", teamInfo.matchName)
 	message := fmt.Sprintf("🔄 %s - %s moving against public money (%.0f%% confidence)",
 		teamInfo.matchName, oddsHistory.Outcome, indicators.ConfidenceScore*100)
 
-	minutesToKickoff := smt.getMinutesToKickoff(ctx, oddsHistory.EventID.Int32)
-	// Extract change percentage from pgtype.Numeric
+	minutesToKickoff := 0
+	if oddsHistory.EventID != nil {
+		minutesToKickoff = smt.getMinutesToKickoff(ctx, *oddsHistory.EventID)
+	}
+	// Extract change percentage
 	changePercent := 0.0
-	if oddsHistory.ChangePercentage.Valid {
-		if changePercentFloat, err := oddsHistory.ChangePercentage.Float64Value(); err == nil && changePercentFloat.Valid {
-			changePercent = changePercentFloat.Float64
-		}
+	if oddsHistory.ChangePercentage != nil {
+		changePercent = float64(*oddsHistory.ChangePercentage)
 	}
 
 	multiplier := 1.0
-	if oddsHistory.Multiplier.Valid {
-		multiplierFloat, _ := oddsHistory.Multiplier.Float64Value()
-		if multiplierFloat.Valid {
-			multiplier = multiplierFloat.Float64
-		}
+	if oddsHistory.Multiplier != nil {
+		multiplier = *oddsHistory.Multiplier
 	}
 
 	return smt.createAlert(ctx, oddsHistoryID, "reverse_line", "high", title, message, changePercent, multiplier, indicators.ConfidenceScore, minutesToKickoff)
 }
 
 // createSharpMoneyAlert creates an alert for high-confidence sharp money movements
-func (smt *SmartMoneyTracker) createSharpMoneyAlert(ctx context.Context, oddsHistoryID int64, oddsHistory database.OddsHistory, indicators SmartMoneyIndicators) error {
-	teamInfo := smt.getTeamInfo(ctx, oddsHistory.EventID.Int32)
+func (smt *SmartMoneyTracker) createSharpMoneyAlert(ctx context.Context, oddsHistoryID int64, oddsHistory generated.OddsHistory, indicators SmartMoneyIndicators) error {
+	teamInfo := teamInfo{}
+	if oddsHistory.EventID != nil {
+		teamInfo = smt.getTeamInfo(ctx, *oddsHistory.EventID)
+	}
 
 	title := fmt.Sprintf("Sharp Money Detected: %s", teamInfo.matchName)
 	message := fmt.Sprintf("🎯 %s - %s shows sharp money activity (%.0f%% confidence)",
 		teamInfo.matchName, oddsHistory.Outcome, indicators.ConfidenceScore*100)
 
-	minutesToKickoff := smt.getMinutesToKickoff(ctx, oddsHistory.EventID.Int32)
-	// Extract change percentage from pgtype.Numeric
+	minutesToKickoff := 0
+	if oddsHistory.EventID != nil {
+		minutesToKickoff = smt.getMinutesToKickoff(ctx, *oddsHistory.EventID)
+	}
+	// Extract change percentage
 	changePercent := 0.0
-	if oddsHistory.ChangePercentage.Valid {
-		if changePercentFloat, err := oddsHistory.ChangePercentage.Float64Value(); err == nil && changePercentFloat.Valid {
-			changePercent = changePercentFloat.Float64
-		}
+	if oddsHistory.ChangePercentage != nil {
+		changePercent = float64(*oddsHistory.ChangePercentage)
 	}
 
 	multiplier := 1.0
-	if oddsHistory.Multiplier.Valid {
-		multiplierFloat, _ := oddsHistory.Multiplier.Float64Value()
-		if multiplierFloat.Valid {
-			multiplier = multiplierFloat.Float64
-		}
+	if oddsHistory.Multiplier != nil {
+		multiplier = *oddsHistory.Multiplier
 	}
 
 	return smt.createAlert(ctx, oddsHistoryID, "sharp_money", "critical", title, message, changePercent, multiplier, indicators.ConfidenceScore, minutesToKickoff)
 }
 
 // createValueSpotAlert creates an alert for value betting opportunities
-func (smt *SmartMoneyTracker) createValueSpotAlert(ctx context.Context, oddsHistoryID int64, oddsHistory database.OddsHistory, indicators SmartMoneyIndicators) error {
-	teamInfo := smt.getTeamInfo(ctx, oddsHistory.EventID.Int32)
+func (smt *SmartMoneyTracker) createValueSpotAlert(ctx context.Context, oddsHistoryID int64, oddsHistory generated.OddsHistory, indicators SmartMoneyIndicators) error {
+	teamInfo := teamInfo{}
+	if oddsHistory.EventID != nil {
+		teamInfo = smt.getTeamInfo(ctx, *oddsHistory.EventID)
+	}
 
 	title := fmt.Sprintf("Value Spot: %s", teamInfo.matchName)
 	message := fmt.Sprintf("💰 %s - %s shows value opportunity (Public bias: %.1f%%)",
 		teamInfo.matchName, oddsHistory.Outcome, indicators.PublicBias)
 
-	minutesToKickoff := smt.getMinutesToKickoff(ctx, oddsHistory.EventID.Int32)
-	// Extract change percentage from pgtype.Numeric
+	minutesToKickoff := 0
+	if oddsHistory.EventID != nil {
+		minutesToKickoff = smt.getMinutesToKickoff(ctx, *oddsHistory.EventID)
+	}
+	// Extract change percentage
 	changePercent := 0.0
-	if oddsHistory.ChangePercentage.Valid {
-		if changePercentFloat, err := oddsHistory.ChangePercentage.Float64Value(); err == nil && changePercentFloat.Valid {
-			changePercent = changePercentFloat.Float64
-		}
+	if oddsHistory.ChangePercentage != nil {
+		changePercent = float64(*oddsHistory.ChangePercentage)
 	}
 
 	multiplier := 1.0
-	if oddsHistory.Multiplier.Valid {
-		multiplierFloat, _ := oddsHistory.Multiplier.Float64Value()
-		if multiplierFloat.Valid {
-			multiplier = multiplierFloat.Float64
-		}
+	if oddsHistory.Multiplier != nil {
+		multiplier = *oddsHistory.Multiplier
 	}
 
 	return smt.createAlert(ctx, oddsHistoryID, "value_spot", "medium", title, message, changePercent, multiplier, indicators.ConfidenceScore, minutesToKickoff)
 }
 
 // createAlert is the core method that inserts alerts into the database
-func (smt *SmartMoneyTracker) createAlert(ctx context.Context, oddsHistoryID int64, alertType, severity, title, message string, changePercent, multiplier, confidence float64, minutesToKickoff int) error {
+func (smt *SmartMoneyTracker) createAlert(
+	ctx context.Context,
+	oddsHistoryID int64,
+	alertType,
+	severity, title, message string,
+	changePercent, multiplier, confidence float64,
+	minutesToKickoff int,
+) error {
 	// Create the alert in the database
-	alert, err := smt.db.CreateMovementAlert(ctx, database.CreateMovementAlertParams{
+	alert, err := smt.db.CreateMovementAlert(ctx, generated.CreateMovementAlertParams{
 		OddsHistoryID:    int32(oddsHistoryID),
 		AlertType:        alertType,
 		Severity:         severity,
 		Title:            title,
 		Message:          message,
-		ChangePercentage: smt.floatToNumeric(changePercent),
-		Multiplier:       smt.floatToNumeric(multiplier),
-		ConfidenceScore:  smt.floatToNumeric(confidence),
-		MinutesToKickoff: pgtype.Int4{Int32: int32(minutesToKickoff), Valid: minutesToKickoff > 0},
+		ChangePercentage: float32(changePercent),
+		Multiplier:       multiplier,
+		ConfidenceScore:  float32(confidence),
+		MinutesToKickoff: func() *int32 {
+			if minutesToKickoff > 0 {
+				m := int32(minutesToKickoff)
+				return &m
+			}
+			return nil
+		}(),
 	})
 
 	if err != nil {
@@ -396,15 +397,15 @@ func (smt *SmartMoneyTracker) getTeamInfo(ctx context.Context, eventID int32) te
 	// Get team names
 	var homeTeamName, awayTeamName string
 
-	if event.HomeTeamID.Valid {
-		homeTeam, err := smt.db.GetTeam(ctx, event.HomeTeamID.Int32)
+	if event.HomeTeamID != nil {
+		homeTeam, err := smt.db.GetTeam(ctx, *event.HomeTeamID)
 		if err == nil {
 			homeTeamName = homeTeam.Name
 		}
 	}
 
-	if event.AwayTeamID.Valid {
-		awayTeam, err := smt.db.GetTeam(ctx, event.AwayTeamID.Int32)
+	if event.AwayTeamID != nil {
+		awayTeam, err := smt.db.GetTeam(ctx, *event.AwayTeamID)
 		if err == nil {
 			awayTeamName = awayTeam.Name
 		}
@@ -436,15 +437,4 @@ func (smt *SmartMoneyTracker) getMinutesToKickoff(ctx context.Context, eventID i
 	}
 
 	return int(minutesToKickoff)
-}
-
-// floatToNumeric converts a float64 to pgtype.Numeric
-func (smt *SmartMoneyTracker) floatToNumeric(f float64) pgtype.Numeric {
-	var num pgtype.Numeric
-	err := num.Scan(fmt.Sprintf("%.4f", f))
-	if err != nil {
-		// Return zero numeric if conversion fails
-		return pgtype.Numeric{}
-	}
-	return num
 }

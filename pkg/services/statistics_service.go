@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/models"
 )
 
 type StatisticsService struct {
-	db     *database.Queries
+	db     *generated.Queries
 	client *IddaaClient
 	logger *logger.Logger
 }
 
-func NewStatisticsService(db *database.Queries, client *IddaaClient) *StatisticsService {
+func NewStatisticsService(db *generated.Queries, client *IddaaClient) *StatisticsService {
 	return &StatisticsService{
 		db:     db,
 		client: client,
@@ -89,14 +87,20 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 	}
 
 	// Update event with live data
-	_, err = s.db.UpdateEventLiveData(ctx, database.UpdateEventLiveDataParams{
+	isLive := stat.IsLive
+	homeScore := int32(stat.HomeScore)
+	awayScore := int32(stat.AwayScore)
+	minuteOfMatch := int32(stat.MinuteOfMatch)
+	half := int32(stat.Half)
+
+	_, err = s.db.UpdateEventLiveData(ctx, generated.UpdateEventLiveDataParams{
 		ID:            event.ID,
-		IsLive:        pgtype.Bool{Bool: stat.IsLive, Valid: true},
+		IsLive:        &isLive,
 		Status:        strconv.Itoa(stat.Status),
-		HomeScore:     pgtype.Int4{Int32: int32(stat.HomeScore), Valid: true},
-		AwayScore:     pgtype.Int4{Int32: int32(stat.AwayScore), Valid: true},
-		MinuteOfMatch: pgtype.Int4{Int32: int32(stat.MinuteOfMatch), Valid: true},
-		Half:          pgtype.Int4{Int32: int32(stat.Half), Valid: true},
+		HomeScore:     &homeScore,
+		AwayScore:     &awayScore,
+		MinuteOfMatch: &minuteOfMatch,
+		Half:          &half,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update event live data: %w", err)
@@ -131,42 +135,68 @@ func (s *StatisticsService) saveEventStatistics(ctx context.Context, stat models
 
 func (s *StatisticsService) saveMatchStatistics(ctx context.Context, eventID int32, stats models.IddaaMatchStatistics) error {
 	// Upsert home team statistics
-	_, err := s.db.UpsertMatchStatistics(ctx, database.UpsertMatchStatisticsParams{
-		EventID:       pgtype.Int4{Int32: eventID, Valid: true},
+	shots := int32(stats.HomeStats.Shots)
+	shotsOnTarget := int32(stats.HomeStats.ShotsOnTarget)
+	possession := int32(stats.HomeStats.Possession)
+	corners := int32(stats.HomeStats.Corners)
+	yellowCards := int32(stats.HomeStats.YellowCards)
+	redCards := int32(stats.HomeStats.RedCards)
+	fouls := int32(stats.HomeStats.Fouls)
+	offsides := int32(stats.HomeStats.Offsides)
+	freeKicks := int32(stats.HomeStats.FreeKicks)
+	throwIns := int32(stats.HomeStats.ThrowIns)
+	goalKicks := int32(stats.HomeStats.GoalKicks)
+	saves := int32(stats.HomeStats.Saves)
+
+	_, err := s.db.UpsertMatchStatistics(ctx, generated.UpsertMatchStatisticsParams{
+		EventID:       &eventID,
 		IsHome:        true,
-		Shots:         pgtype.Int4{Int32: int32(stats.HomeStats.Shots), Valid: true},
-		ShotsOnTarget: pgtype.Int4{Int32: int32(stats.HomeStats.ShotsOnTarget), Valid: true},
-		Possession:    pgtype.Int4{Int32: int32(stats.HomeStats.Possession), Valid: true},
-		Corners:       pgtype.Int4{Int32: int32(stats.HomeStats.Corners), Valid: true},
-		YellowCards:   pgtype.Int4{Int32: int32(stats.HomeStats.YellowCards), Valid: true},
-		RedCards:      pgtype.Int4{Int32: int32(stats.HomeStats.RedCards), Valid: true},
-		Fouls:         pgtype.Int4{Int32: int32(stats.HomeStats.Fouls), Valid: true},
-		Offsides:      pgtype.Int4{Int32: int32(stats.HomeStats.Offsides), Valid: true},
-		FreeKicks:     pgtype.Int4{Int32: int32(stats.HomeStats.FreeKicks), Valid: true},
-		ThrowIns:      pgtype.Int4{Int32: int32(stats.HomeStats.ThrowIns), Valid: true},
-		GoalKicks:     pgtype.Int4{Int32: int32(stats.HomeStats.GoalKicks), Valid: true},
-		Saves:         pgtype.Int4{Int32: int32(stats.HomeStats.Saves), Valid: true},
+		Shots:         &shots,
+		ShotsOnTarget: &shotsOnTarget,
+		Possession:    &possession,
+		Corners:       &corners,
+		YellowCards:   &yellowCards,
+		RedCards:      &redCards,
+		Fouls:         &fouls,
+		Offsides:      &offsides,
+		FreeKicks:     &freeKicks,
+		ThrowIns:      &throwIns,
+		GoalKicks:     &goalKicks,
+		Saves:         &saves,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to save home team statistics: %w", err)
 	}
 
 	// Upsert away team statistics
-	_, err = s.db.UpsertMatchStatistics(ctx, database.UpsertMatchStatisticsParams{
-		EventID:       pgtype.Int4{Int32: eventID, Valid: true},
+	awayShots := int32(stats.AwayStats.Shots)
+	awayShotsOnTarget := int32(stats.AwayStats.ShotsOnTarget)
+	awayPossession := int32(stats.AwayStats.Possession)
+	awayCorners := int32(stats.AwayStats.Corners)
+	awayYellowCards := int32(stats.AwayStats.YellowCards)
+	awayRedCards := int32(stats.AwayStats.RedCards)
+	awayFouls := int32(stats.AwayStats.Fouls)
+	awayOffsides := int32(stats.AwayStats.Offsides)
+	awayFreeKicks := int32(stats.AwayStats.FreeKicks)
+	awayThrowIns := int32(stats.AwayStats.ThrowIns)
+	awayGoalKicks := int32(stats.AwayStats.GoalKicks)
+	awaySaves := int32(stats.AwayStats.Saves)
+
+	_, err = s.db.UpsertMatchStatistics(ctx, generated.UpsertMatchStatisticsParams{
+		EventID:       &eventID,
 		IsHome:        false,
-		Shots:         pgtype.Int4{Int32: int32(stats.AwayStats.Shots), Valid: true},
-		ShotsOnTarget: pgtype.Int4{Int32: int32(stats.AwayStats.ShotsOnTarget), Valid: true},
-		Possession:    pgtype.Int4{Int32: int32(stats.AwayStats.Possession), Valid: true},
-		Corners:       pgtype.Int4{Int32: int32(stats.AwayStats.Corners), Valid: true},
-		YellowCards:   pgtype.Int4{Int32: int32(stats.AwayStats.YellowCards), Valid: true},
-		RedCards:      pgtype.Int4{Int32: int32(stats.AwayStats.RedCards), Valid: true},
-		Fouls:         pgtype.Int4{Int32: int32(stats.AwayStats.Fouls), Valid: true},
-		Offsides:      pgtype.Int4{Int32: int32(stats.AwayStats.Offsides), Valid: true},
-		FreeKicks:     pgtype.Int4{Int32: int32(stats.AwayStats.FreeKicks), Valid: true},
-		ThrowIns:      pgtype.Int4{Int32: int32(stats.AwayStats.ThrowIns), Valid: true},
-		GoalKicks:     pgtype.Int4{Int32: int32(stats.AwayStats.GoalKicks), Valid: true},
-		Saves:         pgtype.Int4{Int32: int32(stats.AwayStats.Saves), Valid: true},
+		Shots:         &awayShots,
+		ShotsOnTarget: &awayShotsOnTarget,
+		Possession:    &awayPossession,
+		Corners:       &awayCorners,
+		YellowCards:   &awayYellowCards,
+		RedCards:      &awayRedCards,
+		Fouls:         &awayFouls,
+		Offsides:      &awayOffsides,
+		FreeKicks:     &awayFreeKicks,
+		ThrowIns:      &awayThrowIns,
+		GoalKicks:     &awayGoalKicks,
+		Saves:         &awaySaves,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to save away team statistics: %w", err)
@@ -176,12 +206,17 @@ func (s *StatisticsService) saveMatchStatistics(ctx context.Context, eventID int
 }
 
 func (s *StatisticsService) saveMatchEvent(ctx context.Context, eventID int32, matchEvent models.IddaaMatchEvent) error {
-	_, err := s.db.CreateMatchEvent(ctx, database.CreateMatchEventParams{
-		EventID:     pgtype.Int4{Int32: eventID, Valid: true},
+	var player *string
+	if matchEvent.Player != "" {
+		player = &matchEvent.Player
+	}
+
+	_, err := s.db.CreateMatchEvent(ctx, generated.CreateMatchEventParams{
+		EventID:     &eventID,
 		Minute:      int32(matchEvent.Minute),
 		EventType:   matchEvent.EventType,
 		Team:        matchEvent.Team,
-		Player:      pgtype.Text{String: matchEvent.Player, Valid: matchEvent.Player != ""},
+		Player:      player,
 		Description: matchEvent.Description,
 		IsHome:      matchEvent.IsHome,
 	})
@@ -201,14 +236,31 @@ func (s *StatisticsService) GetLiveEvents(ctx context.Context) ([]LiveEvent, err
 
 	events := make([]LiveEvent, len(rows))
 	for i, row := range rows {
+		homeScore := 0
+		if row.HomeScore != nil {
+			homeScore = int(*row.HomeScore)
+		}
+		awayScore := 0
+		if row.AwayScore != nil {
+			awayScore = int(*row.AwayScore)
+		}
+		minuteOfMatch := 0
+		if row.MinuteOfMatch != nil {
+			minuteOfMatch = int(*row.MinuteOfMatch)
+		}
+		half := 0
+		if row.Half != nil {
+			half = int(*row.Half)
+		}
+
 		events[i] = LiveEvent{
 			EventSlug:     row.Slug,
 			HomeTeam:      row.HomeTeam,
 			AwayTeam:      row.AwayTeam,
-			HomeScore:     int(row.HomeScore.Int32),
-			AwayScore:     int(row.AwayScore.Int32),
-			MinuteOfMatch: int(row.MinuteOfMatch.Int32),
-			Half:          int(row.Half.Int32),
+			HomeScore:     homeScore,
+			AwayScore:     awayScore,
+			MinuteOfMatch: minuteOfMatch,
+			Half:          half,
 			Status:        row.Status,
 		}
 	}

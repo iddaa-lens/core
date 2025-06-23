@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/iddaa-lens/core/pkg/database"
+	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/models"
 	"github.com/iddaa-lens/core/pkg/utils"
 )
@@ -26,14 +26,14 @@ type TeamTranslations struct {
 	TeamName string
 	Country  string
 	League   string
-	Original database.Team
+	Original generated.Team
 }
 
 // LeagueTranslations holds all translations for a league
 type LeagueTranslations struct {
 	LeagueName string
 	Country    string
-	Original   database.League
+	Original   generated.League
 }
 
 // TeamLeagueMatcher provides comprehensive matching for teams and leagues
@@ -51,7 +51,7 @@ func NewTeamLeagueMatcher(openaiKey string) *TeamLeagueMatcher {
 }
 
 // MatchTeamWithAPI matches a Turkish team with API-Football teams
-func (m *TeamLeagueMatcher) MatchTeamWithAPI(ctx context.Context, turkishTeam database.Team, apiTeams []models.SearchResult) (*MatchCandidate, error) {
+func (m *TeamLeagueMatcher) MatchTeamWithAPI(ctx context.Context, turkishTeam generated.Team, apiTeams []models.SearchResult) (*MatchCandidate, error) {
 	// Step 1: Translate all Turkish data to English
 	translations, err := m.translateTeamContext(ctx, turkishTeam)
 	if err != nil {
@@ -70,7 +70,7 @@ func (m *TeamLeagueMatcher) MatchTeamWithAPI(ctx context.Context, turkishTeam da
 }
 
 // MatchLeagueWithAPI matches a Turkish league with API-Football leagues
-func (m *TeamLeagueMatcher) MatchLeagueWithAPI(ctx context.Context, turkishLeague database.League, apiLeagues []models.SearchResult) (*MatchCandidate, error) {
+func (m *TeamLeagueMatcher) MatchLeagueWithAPI(ctx context.Context, turkishLeague generated.League, apiLeagues []models.SearchResult) (*MatchCandidate, error) {
 	// Step 1: Translate Turkish league data to English
 	translations, err := m.translateLeagueContext(ctx, turkishLeague)
 	if err != nil {
@@ -81,7 +81,7 @@ func (m *TeamLeagueMatcher) MatchLeagueWithAPI(ctx context.Context, turkishLeagu
 	candidates := m.findLeagueCandidates(translations, apiLeagues)
 
 	// Step 3: Return best candidate if confidence is high enough
-	if len(candidates) > 0 && candidates[0].Confidence >= 0.70 {
+	if len(candidates) > 0 && candidates[0].Confidence >= 0.60 {
 		return &candidates[0], nil
 	}
 
@@ -89,17 +89,23 @@ func (m *TeamLeagueMatcher) MatchLeagueWithAPI(ctx context.Context, turkishLeagu
 }
 
 // translateTeamContext translates all relevant team context from Turkish to English
-func (m *TeamLeagueMatcher) translateTeamContext(ctx context.Context, team database.Team) (*TeamTranslations, error) {
+func (m *TeamLeagueMatcher) translateTeamContext(ctx context.Context, team generated.Team) (*TeamTranslations, error) {
+	// Get country string
+	countryStr := ""
+	if team.Country != nil {
+		countryStr = *team.Country
+	}
+
 	// Translate team name (most important)
-	teamName, err := m.translator.TranslateTeamName(ctx, team.Name, team.Country.String)
+	teamName, err := m.translator.TranslateTeamName(ctx, team.Name, countryStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate team name: %w", err)
 	}
 
 	// Translate country
 	country := ""
-	if team.Country.Valid {
-		country = m.translator.TranslateCountryName(team.Country.String)
+	if team.Country != nil {
+		country = m.translator.TranslateCountryName(*team.Country)
 	}
 
 	// League information would ideally come from team's event participation
@@ -115,17 +121,23 @@ func (m *TeamLeagueMatcher) translateTeamContext(ctx context.Context, team datab
 }
 
 // translateLeagueContext translates all relevant league context from Turkish to English
-func (m *TeamLeagueMatcher) translateLeagueContext(ctx context.Context, league database.League) (*LeagueTranslations, error) {
+func (m *TeamLeagueMatcher) translateLeagueContext(ctx context.Context, league generated.League) (*LeagueTranslations, error) {
+	// Get country string
+	countryStr := ""
+	if league.Country != nil {
+		countryStr = *league.Country
+	}
+
 	// Translate league name
-	leagueName, err := m.translator.TranslateLeagueName(ctx, league.Name, league.Country.String)
+	leagueName, err := m.translator.TranslateLeagueName(ctx, league.Name, countryStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate league name: %w", err)
 	}
 
 	// Translate country
 	country := ""
-	if league.Country.Valid {
-		country = m.translator.TranslateCountryName(league.Country.String)
+	if league.Country != nil {
+		country = m.translator.TranslateCountryName(*league.Country)
 	}
 
 	return &LeagueTranslations{
@@ -183,7 +195,7 @@ func (m *TeamLeagueMatcher) findLeagueCandidates(translations *LeagueTranslation
 		}
 
 		confidence := m.calculateLeagueMatchConfidence(translations, apiLeague, leagueVariations)
-		if confidence >= 0.60 { // Minimum threshold
+		if confidence >= 0.50 { // Lowered minimum threshold for more matches
 			candidates = append(candidates, MatchCandidate{
 				ID:         apiLeague.ID,
 				Name:       apiLeague.Name,
@@ -281,12 +293,64 @@ func (m *TeamLeagueMatcher) calculateLeagueMatchConfidence(translations *LeagueT
 	if translations.Country != "" && apiLeague.Country != "" {
 		countryMatch := m.normalizer.CompareNormalized(translations.Country, apiLeague.Country)
 		if countryMatch < 0.3 {
-			maxConfidence *= 0.6 // Stronger penalty for leagues
+			maxConfidence *= 0.7 // Reduced penalty to allow more matches
+		}
+	}
+
+	// Strategy 5: Partial name matching for common league patterns
+	if maxConfidence < 0.6 {
+		partialMatch := m.calculatePartialLeagueMatch(translations.LeagueName, apiLeague.Name)
+		if partialMatch > maxConfidence {
+			maxConfidence = partialMatch
 		}
 	}
 
 	// Ensure confidence doesn't exceed 1.0
 	return math.Min(maxConfidence, 1.0)
+}
+
+// calculatePartialLeagueMatch looks for partial matches in league names
+func (m *TeamLeagueMatcher) calculatePartialLeagueMatch(translatedName, apiName string) float64 {
+	// Common league terms that should match
+	leagueTerms := map[string][]string{
+		"super league":   {"super lig", "süper lig", "superlig"},
+		"first league":   {"1. lig", "birinci lig", "first division"},
+		"second league":  {"2. lig", "ikinci lig", "second division"},
+		"third league":   {"3. lig", "üçüncü lig", "third division"},
+		"premier league": {"premier lig", "premier league"},
+		"championship":   {"şampiyonluk", "championship"},
+		"cup":            {"kupa", "kupası", "cup"},
+		"playoffs":       {"play-off", "playoff"},
+	}
+
+	translatedLower := strings.ToLower(translatedName)
+	apiLower := strings.ToLower(apiName)
+
+	// Check for common terms
+	for englishTerm, variations := range leagueTerms {
+		// Check if API name contains the English term
+		if strings.Contains(apiLower, englishTerm) {
+			// Check if translated name contains any variation
+			for _, variation := range variations {
+				if strings.Contains(translatedLower, variation) {
+					return 0.65 // Good partial match
+				}
+			}
+		}
+	}
+
+	// Check for number-based leagues (1st, 2nd, etc.)
+	if strings.Contains(translatedLower, "1.") && (strings.Contains(apiLower, "first") || strings.Contains(apiLower, "1st")) {
+		return 0.60
+	}
+	if strings.Contains(translatedLower, "2.") && (strings.Contains(apiLower, "second") || strings.Contains(apiLower, "2nd")) {
+		return 0.60
+	}
+	if strings.Contains(translatedLower, "3.") && (strings.Contains(apiLower, "third") || strings.Contains(apiLower, "3rd")) {
+		return 0.60
+	}
+
+	return 0.0
 }
 
 // calculateKeywordSimilarity calculates similarity based on common keywords
@@ -436,4 +500,12 @@ func (m *TeamLeagueMatcher) ValidateMatch(translations interface{}, apiResult mo
 // UsesAI returns whether this matcher uses AI translation
 func (m *TeamLeagueMatcher) UsesAI() bool {
 	return m.translator.aiTranslator != nil
+}
+
+// GetAITranslator returns the AI translator instance if available
+func (m *TeamLeagueMatcher) GetAITranslator() *AITranslationService {
+	if m.translator != nil {
+		return m.translator.aiTranslator
+	}
+	return nil
 }
