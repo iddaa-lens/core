@@ -80,6 +80,21 @@ type PaginatedEventsResponse struct {
 	Pagination PaginationInfo  `json:"pagination"`
 }
 
+// SportResponse represents a sport in API responses
+type SportResponse struct {
+	ID                int32  `json:"id"`
+	Name              string `json:"name"`
+	Code              string `json:"code"`
+	Slug              string `json:"slug"`
+	LiveCount         int32  `json:"live_count"`
+	UpcomingCount     int32  `json:"upcoming_count"`
+	EventsCount       int32  `json:"events_count"`
+	OddsCount         int32  `json:"odds_count"`
+	HasResults        bool   `json:"has_results"`
+	HasKingOdd        bool   `json:"has_king_odd"`
+	HasDigitalContent bool   `json:"has_digital_content"`
+}
+
 // Response represents a general API response
 type Response struct {
 	Success bool        `json:"success"`

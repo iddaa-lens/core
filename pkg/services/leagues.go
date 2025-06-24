@@ -120,7 +120,7 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 		// Generate slug from name
 		baseSlug := slug.Make(comp.Name)
 		leagueSlug := baseSlug
-		
+
 		// Ensure uniqueness within this batch by adding suffix if needed
 		counter := 1
 		originalSlug := leagueSlug

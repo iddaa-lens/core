@@ -17,6 +17,7 @@ import (
 	"github.com/iddaa-lens/core/pkg/handlers/leagues"
 	"github.com/iddaa-lens/core/pkg/handlers/odds"
 	"github.com/iddaa-lens/core/pkg/handlers/smart_money"
+	"github.com/iddaa-lens/core/pkg/handlers/sports"
 	"github.com/iddaa-lens/core/pkg/handlers/teams"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/middleware"
@@ -34,6 +35,7 @@ type Server struct {
 		health     *health.Handler
 		events     *events.Handler
 		odds       *odds.Handler
+		sports     *sports.Handler
 		teams      *teams.Handler
 		leagues    *leagues.Handler
 		smartMoney *smart_money.Handler
@@ -77,6 +79,7 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	server.handlers.health = health.NewHandler(log)
 	server.handlers.events = events.NewHandler(queries, log)
 	server.handlers.odds = odds.NewHandler(queries, log)
+	server.handlers.sports = sports.NewHandler(queries, log)
 	server.handlers.teams = teams.NewHandler(queries, log)
 	server.handlers.leagues = leagues.NewHandler(queries, log)
 
@@ -134,6 +137,9 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/api/events/upcoming", middleware.CORS(s.handlers.events.Upcoming))
 	s.router.HandleFunc("/api/events/daily", middleware.CORS(s.handlers.events.Daily))
 	s.router.HandleFunc("/api/events/live", middleware.CORS(s.handlers.events.Live))
+
+	// Sports endpoints
+	s.router.HandleFunc("/api/sports", middleware.CORS(s.handlers.sports.List))
 
 	// Teams endpoints
 	s.router.HandleFunc("/api/teams", middleware.CORS(s.handlers.teams.List))
