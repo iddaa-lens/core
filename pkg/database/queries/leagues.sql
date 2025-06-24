@@ -124,24 +124,26 @@ SELECT * FROM leagues WHERE external_id = sqlc.arg(external_id);
 SELECT * FROM leagues ORDER BY name;
 
 -- name: UpsertLeague :one
-INSERT INTO leagues (external_id, name, country, sport_id, is_active)
-VALUES (sqlc.arg(external_id), sqlc.arg(name), sqlc.arg(country), sqlc.arg(sport_id), sqlc.arg(is_active))
+INSERT INTO leagues (external_id, name, country, sport_id, is_active, slug)
+VALUES (sqlc.arg(external_id), sqlc.arg(name), sqlc.arg(country), sqlc.arg(sport_id), sqlc.arg(is_active), sqlc.arg(slug))
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
     country = EXCLUDED.country,
     sport_id = EXCLUDED.sport_id,
     is_active = EXCLUDED.is_active,
+    slug = EXCLUDED.slug,
     updated_at = CURRENT_TIMESTAMP
 RETURNING *;
 
 -- name: BulkUpsertLeagues :execrows
-INSERT INTO leagues (external_id, name, country, sport_id, is_active)
+INSERT INTO leagues (external_id, name, country, sport_id, is_active, slug)
 VALUES (
     unnest(sqlc.arg(external_ids)::text[]),
     unnest(sqlc.arg(names)::text[]),
     unnest(sqlc.arg(countries)::text[]),
     unnest(sqlc.arg(sport_ids)::int[]),
-    unnest(sqlc.arg(is_actives)::boolean[])
+    unnest(sqlc.arg(is_actives)::boolean[]),
+    unnest(sqlc.arg(slugs)::text[])
 )
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,

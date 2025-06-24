@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS leagues (
     country VARCHAR(100),
     sport_id INTEGER REFERENCES sports(id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT true,
-    slug VARCHAR(255),
+    slug VARCHAR(255) UNIQUE NOT NULL,
     -- API-Football enrichment fields
     api_football_id INTEGER,
     league_type VARCHAR(50),
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS teams (
     country VARCHAR(100),
     logo_url TEXT,
     is_active BOOLEAN DEFAULT true,
-    slug VARCHAR(255),
+    slug VARCHAR(255) UNIQUE NOT NULL,
     -- API-Football enrichment fields
     api_football_id INTEGER,
     team_code VARCHAR(10),

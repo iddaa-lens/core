@@ -73,7 +73,7 @@ VALUES
 type CreateTeamParams struct {
 	ExternalID string  `db:"external_id" json:"external_id"`
 	Name       string  `db:"name" json:"name"`
-	Slug       *string `db:"slug" json:"slug"`
+	Slug       string  `db:"slug" json:"slug"`
 	Country    *string `db:"country" json:"country"`
 	LogoUrl    *string `db:"logo_url" json:"logo_url"`
 }
@@ -872,9 +872,9 @@ SET
 `
 
 type UpsertTeamParams struct {
-	ExternalID string  `db:"external_id" json:"external_id"`
-	Name       string  `db:"name" json:"name"`
-	Slug       *string `db:"slug" json:"slug"`
+	ExternalID string `db:"external_id" json:"external_id"`
+	Name       string `db:"name" json:"name"`
+	Slug       string `db:"slug" json:"slug"`
 }
 
 func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (Team, error) {

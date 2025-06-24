@@ -12,13 +12,14 @@ import (
 )
 
 const bulkUpsertLeagues = `-- name: BulkUpsertLeagues :execrows
-INSERT INTO leagues (external_id, name, country, sport_id, is_active)
+INSERT INTO leagues (external_id, name, country, sport_id, is_active, slug)
 VALUES (
     unnest($1::text[]),
     unnest($2::text[]),
     unnest($3::text[]),
     unnest($4::int[]),
-    unnest($5::boolean[])
+    unnest($5::boolean[]),
+    unnest($6::text[])
 )
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -34,6 +35,7 @@ type BulkUpsertLeaguesParams struct {
 	Countries   []string `db:"countries" json:"countries"`
 	SportIds    []int32  `db:"sport_ids" json:"sport_ids"`
 	IsActives   []bool   `db:"is_actives" json:"is_actives"`
+	Slugs       []string `db:"slugs" json:"slugs"`
 }
 
 func (q *Queries) BulkUpsertLeagues(ctx context.Context, arg BulkUpsertLeaguesParams) (int64, error) {
@@ -43,6 +45,7 @@ func (q *Queries) BulkUpsertLeagues(ctx context.Context, arg BulkUpsertLeaguesPa
 		arg.Countries,
 		arg.SportIds,
 		arg.IsActives,
+		arg.Slugs,
 	)
 	if err != nil {
 		return 0, err
@@ -1039,13 +1042,14 @@ func (q *Queries) UpdateLeagueApiFootballID(ctx context.Context, arg UpdateLeagu
 }
 
 const upsertLeague = `-- name: UpsertLeague :one
-INSERT INTO leagues (external_id, name, country, sport_id, is_active)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO leagues (external_id, name, country, sport_id, is_active, slug)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (external_id) DO UPDATE SET
     name = EXCLUDED.name,
     country = EXCLUDED.country,
     sport_id = EXCLUDED.sport_id,
     is_active = EXCLUDED.is_active,
+    slug = EXCLUDED.slug,
     updated_at = CURRENT_TIMESTAMP
 RETURNING id, external_id, name, country, sport_id, is_active, slug, api_football_id, league_type, logo_url, country_code, country_flag_url, has_standings, has_fixtures, has_players, has_top_scorers, has_injuries, has_predictions, has_odds, current_season_year, current_season_start, current_season_end, api_enrichment_data, last_api_update, created_at, updated_at
 `
@@ -1056,6 +1060,7 @@ type UpsertLeagueParams struct {
 	Country    *string `db:"country" json:"country"`
 	SportID    *int32  `db:"sport_id" json:"sport_id"`
 	IsActive   *bool   `db:"is_active" json:"is_active"`
+	Slug       string  `db:"slug" json:"slug"`
 }
 
 func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (League, error) {
@@ -1065,6 +1070,7 @@ func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (Lea
 		arg.Country,
 		arg.SportID,
 		arg.IsActive,
+		arg.Slug,
 	)
 	var i League
 	err := row.Scan(

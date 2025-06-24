@@ -6,32 +6,26 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gosimple/slug"
 	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 )
 
 type LeaguesService struct {
-	db           *generated.Queries
-	client       *http.Client
-	apiKey       string
-	iddaaClient  *IddaaClient
-	aiTranslator *AITranslationService
-	logger       *logger.Logger
+	db          *generated.Queries
+	client      *http.Client
+	apiKey      string
+	iddaaClient *IddaaClient
+	logger      *logger.Logger
 }
 
 func NewLeaguesService(db *generated.Queries, client *http.Client, apiKey string, iddaaClient *IddaaClient, openaiKey string) *LeaguesService {
-	var aiTranslator *AITranslationService
-	if openaiKey != "" {
-		aiTranslator = NewAITranslationService(openaiKey)
-	}
-
 	return &LeaguesService{
-		db:           db,
-		client:       client,
-		apiKey:       apiKey,
-		iddaaClient:  iddaaClient,
-		aiTranslator: aiTranslator,
-		logger:       logger.New("leagues-service"),
+		db:          db,
+		client:      client,
+		apiKey:      apiKey,
+		iddaaClient: iddaaClient,
+		logger:      logger.New("leagues-service"),
 	}
 }
 
@@ -66,6 +60,9 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 		return nil
 	}
 
+	// Keep track of slugs we're generating in this batch to avoid duplicates
+	slugsInBatch := make(map[string]bool)
+
 	// Prepare bulk data
 	var (
 		externalIds []string
@@ -73,6 +70,7 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 		countries   []string
 		sportIds    []int32
 		isActives   []bool
+		slugs       []string
 	)
 
 	successCount := 0
@@ -119,21 +117,34 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 		// Create external ID as string from the integer ID
 		externalID := strconv.Itoa(comp.ID)
 
+		// Generate slug from name
+		baseSlug := slug.Make(comp.Name)
+		leagueSlug := baseSlug
+		
+		// Ensure uniqueness within this batch by adding suffix if needed
+		counter := 1
+		originalSlug := leagueSlug
+		for slugsInBatch[leagueSlug] {
+			leagueSlug = fmt.Sprintf("%s-%d", originalSlug, counter)
+			counter++
+		}
+		slugsInBatch[leagueSlug] = true
+
 		// Add to bulk arrays
 		externalIds = append(externalIds, externalID)
 		names = append(names, comp.Name)
 		countries = append(countries, country)
 		sportIds = append(sportIds, int32(sportIDInt))
 		isActives = append(isActives, true) // Assume all competitions are active
+		slugs = append(slugs, leagueSlug)
 
 		successCount++
 
 		s.logger.Debug().
 			Int("comp_id", comp.ID).
+			Str("external_id", externalID).
 			Str("comp_name", comp.Name).
-			Str("country", country).
-			Int("sport_id", sportIDInt).
-			Bool("is_active", true).
+			Str("slug", leagueSlug).
 			Str("action", "prepared").
 			Msg("Prepared competition for bulk insert")
 	}
@@ -146,8 +157,14 @@ func (s *LeaguesService) SyncLeaguesFromIddaa(ctx context.Context) error {
 			Countries:   countries,
 			SportIds:    sportIds,
 			IsActives:   isActives,
+			Slugs:       slugs,
 		})
 		if err != nil {
+			s.logger.Error().
+				Err(err).
+				Int("total_leagues", len(externalIds)).
+				Str("action", "bulk_upsert_failed").
+				Msg("Failed to bulk upsert leagues")
 			return fmt.Errorf("failed to bulk upsert leagues: %w", err)
 		}
 

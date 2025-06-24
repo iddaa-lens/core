@@ -37,11 +37,11 @@ type BigMover struct {
 	SportName               string           `db:"sport_name" json:"sport_name"`
 	SportSlug               string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName              string           `db:"league_name" json:"league_name"`
-	LeagueSlug              *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug              string           `db:"league_slug" json:"league_slug"`
 	HomeTeam                string           `db:"home_team" json:"home_team"`
-	HomeTeamSlug            *string          `db:"home_team_slug" json:"home_team_slug"`
+	HomeTeamSlug            string           `db:"home_team_slug" json:"home_team_slug"`
 	AwayTeam                string           `db:"away_team" json:"away_team"`
-	AwayTeamSlug            *string          `db:"away_team_slug" json:"away_team_slug"`
+	AwayTeamSlug            string           `db:"away_team_slug" json:"away_team_slug"`
 	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
 	Status                  string           `db:"status" json:"status"`
 	IsLive                  *bool            `db:"is_live" json:"is_live"`
@@ -71,12 +71,12 @@ type ContrarianBet struct {
 	SportName         string           `db:"sport_name" json:"sport_name"`
 	SportSlug         string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName        string           `db:"league_name" json:"league_name"`
-	LeagueSlug        *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug        string           `db:"league_slug" json:"league_slug"`
 	Country           *string          `db:"country" json:"country"`
 	HomeTeam          string           `db:"home_team" json:"home_team"`
-	HomeTeamSlug      *string          `db:"home_team_slug" json:"home_team_slug"`
+	HomeTeamSlug      string           `db:"home_team_slug" json:"home_team_slug"`
 	AwayTeam          string           `db:"away_team" json:"away_team"`
-	AwayTeamSlug      *string          `db:"away_team_slug" json:"away_team_slug"`
+	AwayTeamSlug      string           `db:"away_team_slug" json:"away_team_slug"`
 	MatchName         interface{}      `db:"match_name" json:"match_name"`
 	EventDate         pgtype.Timestamp `db:"event_date" json:"event_date"`
 	HoursToKickoff    int32            `db:"hours_to_kickoff" json:"hours_to_kickoff"`
@@ -146,11 +146,11 @@ type HighVolumeEvent struct {
 	SportName               string           `db:"sport_name" json:"sport_name"`
 	SportSlug               string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName              string           `db:"league_name" json:"league_name"`
-	LeagueSlug              *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug              string           `db:"league_slug" json:"league_slug"`
 	HomeTeam                string           `db:"home_team" json:"home_team"`
-	HomeTeamSlug            *string          `db:"home_team_slug" json:"home_team_slug"`
+	HomeTeamSlug            string           `db:"home_team_slug" json:"home_team_slug"`
 	AwayTeam                string           `db:"away_team" json:"away_team"`
-	AwayTeamSlug            *string          `db:"away_team_slug" json:"away_team_slug"`
+	AwayTeamSlug            string           `db:"away_team_slug" json:"away_team_slug"`
 	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
 	Status                  string           `db:"status" json:"status"`
 	BettingVolumePercentage *float32         `db:"betting_volume_percentage" json:"betting_volume_percentage"`
@@ -167,7 +167,7 @@ type League struct {
 	Country            *string          `db:"country" json:"country"`
 	SportID            *int32           `db:"sport_id" json:"sport_id"`
 	IsActive           *bool            `db:"is_active" json:"is_active"`
-	Slug               *string          `db:"slug" json:"slug"`
+	Slug               string           `db:"slug" json:"slug"`
 	ApiFootballID      *int32           `db:"api_football_id" json:"api_football_id"`
 	LeagueType         *string          `db:"league_type" json:"league_type"`
 	LogoUrl            *string          `db:"logo_url" json:"logo_url"`
@@ -215,11 +215,11 @@ type LiveOpportunity struct {
 	SportName               string           `db:"sport_name" json:"sport_name"`
 	SportSlug               string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName              string           `db:"league_name" json:"league_name"`
-	LeagueSlug              *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug              string           `db:"league_slug" json:"league_slug"`
 	HomeTeam                string           `db:"home_team" json:"home_team"`
-	HomeTeamSlug            *string          `db:"home_team_slug" json:"home_team_slug"`
+	HomeTeamSlug            string           `db:"home_team_slug" json:"home_team_slug"`
 	AwayTeam                string           `db:"away_team" json:"away_team"`
-	AwayTeamSlug            *string          `db:"away_team_slug" json:"away_team_slug"`
+	AwayTeamSlug            string           `db:"away_team_slug" json:"away_team_slug"`
 	HomeScore               *int32           `db:"home_score" json:"home_score"`
 	AwayScore               *int32           `db:"away_score" json:"away_score"`
 	MinuteOfMatch           *int32           `db:"minute_of_match" json:"minute_of_match"`
@@ -360,10 +360,10 @@ type SharpMoneyMove struct {
 	SportName           string           `db:"sport_name" json:"sport_name"`
 	SportSlug           string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName          string           `db:"league_name" json:"league_name"`
-	LeagueSlug          *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug          string           `db:"league_slug" json:"league_slug"`
 	MatchName           interface{}      `db:"match_name" json:"match_name"`
-	HomeTeamSlug        *string          `db:"home_team_slug" json:"home_team_slug"`
-	AwayTeamSlug        *string          `db:"away_team_slug" json:"away_team_slug"`
+	HomeTeamSlug        string           `db:"home_team_slug" json:"home_team_slug"`
+	AwayTeamSlug        string           `db:"away_team_slug" json:"away_team_slug"`
 	EventDate           pgtype.Timestamp `db:"event_date" json:"event_date"`
 	Status              string           `db:"status" json:"status"`
 	MarketName          string           `db:"market_name" json:"market_name"`
@@ -404,7 +404,7 @@ type Team struct {
 	Country           *string          `db:"country" json:"country"`
 	LogoUrl           *string          `db:"logo_url" json:"logo_url"`
 	IsActive          *bool            `db:"is_active" json:"is_active"`
-	Slug              *string          `db:"slug" json:"slug"`
+	Slug              string           `db:"slug" json:"slug"`
 	ApiFootballID     *int32           `db:"api_football_id" json:"api_football_id"`
 	TeamCode          *string          `db:"team_code" json:"team_code"`
 	FoundedYear       *int32           `db:"founded_year" json:"founded_year"`
@@ -450,10 +450,10 @@ type ValueSpot struct {
 	SportName          string           `db:"sport_name" json:"sport_name"`
 	SportSlug          string           `db:"sport_slug" json:"sport_slug"`
 	LeagueName         string           `db:"league_name" json:"league_name"`
-	LeagueSlug         *string          `db:"league_slug" json:"league_slug"`
+	LeagueSlug         string           `db:"league_slug" json:"league_slug"`
 	MatchName          interface{}      `db:"match_name" json:"match_name"`
-	HomeTeamSlug       *string          `db:"home_team_slug" json:"home_team_slug"`
-	AwayTeamSlug       *string          `db:"away_team_slug" json:"away_team_slug"`
+	HomeTeamSlug       string           `db:"home_team_slug" json:"home_team_slug"`
+	AwayTeamSlug       string           `db:"away_team_slug" json:"away_team_slug"`
 	EventDate          pgtype.Timestamp `db:"event_date" json:"event_date"`
 	HoursToKickoff     int32            `db:"hours_to_kickoff" json:"hours_to_kickoff"`
 	MarketCode         string           `db:"market_code" json:"market_code"`
