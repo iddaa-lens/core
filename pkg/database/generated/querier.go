@@ -106,8 +106,13 @@ type Querier interface {
 	// Get recent significant odds movements across all events
 	GetRecentMovements(ctx context.Context, arg GetRecentMovementsParams) ([]GetRecentMovementsRow, error)
 	GetRecentOddsHistory(ctx context.Context, arg GetRecentOddsHistoryParams) ([]GetRecentOddsHistoryRow, error)
+	// Detect TRUE reverse line movements where odds move against public betting percentages
 	GetReverseLineMovements(ctx context.Context, arg GetReverseLineMovementsParams) ([]GetReverseLineMovementsRow, error)
+	// Comprehensive sharp money detection combining multiple factors
+	GetSharpMoneyIndicators(ctx context.Context, arg GetSharpMoneyIndicatorsParams) ([]GetSharpMoneyIndicatorsRow, error)
 	GetSport(ctx context.Context, id int32) (Sport, error)
+	// Detect rapid odds movements across multiple bookmakers (steam moves)
+	GetSteamMoves(ctx context.Context, arg GetSteamMovesParams) ([]GetSteamMovesRow, error)
 	// Get potentially suspicious odds movements (sharp money indicators)
 	GetSuspiciousMovements(ctx context.Context, arg GetSuspiciousMovementsParams) ([]GetSuspiciousMovementsRow, error)
 	GetTeam(ctx context.Context, id int32) (Team, error)

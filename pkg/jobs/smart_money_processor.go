@@ -7,7 +7,6 @@ import (
 	"github.com/iddaa-lens/core/pkg/database/generated"
 	"github.com/iddaa-lens/core/pkg/logger"
 	"github.com/iddaa-lens/core/pkg/services"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // SmartMoneyProcessorJob processes odds movements for smart money alerts
@@ -47,46 +46,16 @@ func (j *SmartMoneyProcessorJob) Execute(ctx context.Context) error {
 		Str("action", "processor_start").
 		Msg("Starting smart money processor job")
 
-	// Get recent odds history records (last 2 minutes to catch new movements)
-	since := time.Now().Add(-2 * time.Minute)
-
-	recentMovements, err := j.queries.GetRecentOddsHistory(ctx, generated.GetRecentOddsHistoryParams{
-		SinceTime:    pgtype.Timestamp{Time: since, Valid: true},
-		MinChangePct: 5.0, // 5% minimum change
-		LimitCount:   100, // Process up to 100 movements per run
-	})
-
+	// Process recent movements with smart money detection using real betting data
+	err := j.tracker.ProcessRecentMovements(ctx, 1) // Process last hour
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get recent odds history")
+		log.Error().Err(err).Msg("Failed to process recent movements")
 		return err
 	}
 
 	log.Info().
-		Str("action", "processing_recent_movements").
-		Int("movement_count", len(recentMovements)).
-		Msg("Processing recent odds movements for smart money alerts")
-
-	// Process each new odds movement
-	processedCount := 0
-	alertsCreated := 0
-
-	// Process each odds movement for smart money alerts
-	for _, movement := range recentMovements {
-		err = j.tracker.AnalyzeOddsHistoryForAlerts(ctx, int64(movement.ID))
-		if err != nil {
-			log.Error().
-				Err(err).
-				Int32("odds_history_id", movement.ID).
-				Msg("Failed to analyze odds movement")
-			continue
-		}
-		processedCount++
-
-		// Count as alert created if movement was significant enough
-		if movement.ChangePercentage != nil && *movement.ChangePercentage >= 20.0 {
-			alertsCreated++
-		}
-	}
+		Str("action", "processing_complete").
+		Msg("Smart money processing completed successfully")
 
 	// Clean up expired alerts
 	err = j.cleanupExpiredAlerts(ctx)
@@ -97,8 +66,6 @@ func (j *SmartMoneyProcessorJob) Execute(ctx context.Context) error {
 	duration := time.Since(start)
 	log.Info().
 		Str("action", "processor_complete").
-		Int("processed_count", processedCount).
-		Int("alerts_created", alertsCreated).
 		Dur("duration", duration).
 		Msg("Smart money processor job completed")
 
@@ -119,12 +86,12 @@ func (j *SmartMoneyProcessorJob) cleanupExpiredAlerts(ctx context.Context) error
 func ProcessNewOddsMovement(ctx context.Context, tracker *services.SmartMoneyTracker, oddsHistoryID int64) {
 	log := logger.WithContext(ctx, "process-new-movement")
 
-	// Analyze the movement for potential alerts
-	err := tracker.AnalyzeOddsHistoryForAlerts(ctx, oddsHistoryID)
+	// Process recent movements to catch new alerts
+	err := tracker.ProcessRecentMovements(ctx, 1)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Int64("odds_history_id", oddsHistoryID).
-			Msg("Failed to analyze odds movement for smart money alerts")
+			Msg("Failed to process odds movement for smart money alerts")
 	}
 }

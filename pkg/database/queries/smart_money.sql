@@ -30,38 +30,55 @@ LIMIT
     sqlc.arg(limit_count)::int;
 
 -- name: GetReverseLineMovements :many
+-- Detect TRUE reverse line movements where odds move against public betting percentages
 SELECT
     oh.*,
     e.external_id as event_external_id,
     e.event_date,
     e.home_team_id,
     e.away_team_id,
+    e.betting_volume_percentage,
     ht.name as home_team_name,
     at.name as away_team_name,
     mt.code as market_code,
-    mt.name as market_name
+    mt.name as market_name,
+    od.bet_percentage,
+    od.implied_probability,
+    -- Calculate the divergence between public betting and odds movement
+    CASE 
+        WHEN od.bet_percentage > 60 AND oh.change_percentage > 0 THEN 'public_heavy_odds_worse'
+        WHEN od.bet_percentage < 40 AND oh.change_percentage < 0 THEN 'public_light_odds_better'
+        ELSE 'normal'
+    END as movement_type,
+    -- Strength of reverse movement (public % * abs(odds change %))
+    (od.bet_percentage * ABS(oh.change_percentage) / 100) as reverse_strength
 FROM
     odds_history oh
     JOIN events e ON oh.event_id = e.id
     LEFT JOIN teams ht ON e.home_team_id = ht.id
     LEFT JOIN teams at ON e.away_team_id = at.id
     JOIN market_types mt ON oh.market_type_id = mt.id
+    LEFT JOIN outcome_distributions od ON (
+        oh.event_id = od.event_id 
+        AND oh.market_type_id = od.market_type_id
+        AND oh.outcome = od.outcome
+    )
 WHERE
     oh.recorded_at >= sqlc.arg(since_time)
-    AND e.event_date > NOW() -- Look for movements against typical patterns
+    AND e.event_date > NOW()
+    AND od.bet_percentage IS NOT NULL
+    -- True reverse line movements:
     AND (
-        (
-            oh.previous_value < 2.0
-            AND oh.change_percentage > 15
-        )
-        OR -- Favorites drifting
-        (
-            oh.previous_value > 4.0
-            AND oh.change_percentage < -15
-        ) -- Big underdogs shortening
+        -- Heavy public betting (>65%) but odds getting worse (going up)
+        (od.bet_percentage > 65 AND oh.change_percentage > 5)
+        OR
+        -- Light public betting (<35%) but odds getting better (going down)
+        (od.bet_percentage < 35 AND oh.change_percentage < -5)
     )
+    -- Only significant movements
+    AND ABS(oh.change_percentage) >= 5
 ORDER BY
-    ABS(oh.change_percentage) DESC
+    (od.bet_percentage * ABS(oh.change_percentage) / 100) DESC
 LIMIT
     sqlc.arg(limit_count);
 
@@ -259,6 +276,119 @@ SET
 WHERE
     expires_at <= NOW()
     AND is_active = true;
+
+-- name: GetSteamMoves :many
+-- Detect rapid odds movements across multiple bookmakers (steam moves)
+SELECT
+    oh.*,
+    e.external_id as event_external_id,
+    e.event_date,
+    e.betting_volume_percentage,
+    ht.name as home_team_name,
+    at.name as away_team_name,
+    mt.code as market_code,
+    mt.name as market_name,
+    -- Time since last movement
+    EXTRACT(EPOCH FROM (oh.recorded_at - LAG(oh.recorded_at) OVER (
+        PARTITION BY oh.event_id, oh.market_type_id, oh.outcome 
+        ORDER BY oh.recorded_at
+    ))) as seconds_since_last_move,
+    -- Running total of movements in last hour
+    COUNT(*) OVER (
+        PARTITION BY oh.event_id, oh.market_type_id, oh.outcome 
+        ORDER BY oh.recorded_at 
+        RANGE BETWEEN INTERVAL '1 hour' PRECEDING AND CURRENT ROW
+    ) as movements_last_hour
+FROM
+    odds_history oh
+    JOIN events e ON oh.event_id = e.id
+    LEFT JOIN teams ht ON e.home_team_id = ht.id
+    LEFT JOIN teams at ON e.away_team_id = at.id
+    JOIN market_types mt ON oh.market_type_id = mt.id
+WHERE
+    oh.recorded_at >= sqlc.arg(since_time)
+    AND e.event_date > NOW()
+    -- Significant movement
+    AND ABS(oh.change_percentage) >= 3
+    -- Multiple movements in short time indicates steam
+    AND oh.event_id IN (
+        SELECT event_id 
+        FROM odds_history 
+        WHERE recorded_at >= sqlc.arg(since_time)
+        GROUP BY event_id, market_type_id, outcome
+        HAVING COUNT(*) >= 3 -- At least 3 movements
+    )
+ORDER BY
+    oh.recorded_at DESC
+LIMIT
+    sqlc.arg(limit_count);
+
+-- name: GetSharpMoneyIndicators :many
+-- Comprehensive sharp money detection combining multiple factors
+SELECT
+    oh.*,
+    e.external_id as event_external_id,
+    e.event_date,
+    e.betting_volume_percentage,
+    e.volume_rank,
+    ht.name as home_team_name,
+    at.name as away_team_name,
+    mt.code as market_code,
+    mt.name as market_name,
+    od.bet_percentage,
+    od.implied_probability,
+    -- Sharp money score calculation
+    (
+        -- Reverse line movement factor (0-40 points)
+        CASE 
+            WHEN od.bet_percentage > 70 AND oh.change_percentage > 5 THEN 40
+            WHEN od.bet_percentage > 60 AND oh.change_percentage > 3 THEN 30
+            WHEN od.bet_percentage < 30 AND oh.change_percentage < -5 THEN 40
+            WHEN od.bet_percentage < 40 AND oh.change_percentage < -3 THEN 30
+            ELSE 0
+        END +
+        -- Volume factor (0-20 points) - lower volume with movement = sharper
+        CASE
+            WHEN e.betting_volume_percentage < 1 AND ABS(oh.change_percentage) > 10 THEN 20
+            WHEN e.betting_volume_percentage < 2 AND ABS(oh.change_percentage) > 7 THEN 15
+            WHEN e.betting_volume_percentage < 5 AND ABS(oh.change_percentage) > 5 THEN 10
+            ELSE 0
+        END +
+        -- Timing factor (0-20 points) - late movement = sharper
+        CASE
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 2 THEN 20
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 6 THEN 15
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 24 THEN 10
+            ELSE 5
+        END +
+        -- Movement size factor (0-20 points)
+        CASE
+            WHEN ABS(oh.change_percentage) > 20 THEN 20
+            WHEN ABS(oh.change_percentage) > 15 THEN 15
+            WHEN ABS(oh.change_percentage) > 10 THEN 10
+            WHEN ABS(oh.change_percentage) > 5 THEN 5
+            ELSE 0
+        END
+    ) as sharp_money_score
+FROM
+    odds_history oh
+    JOIN events e ON oh.event_id = e.id
+    LEFT JOIN teams ht ON e.home_team_id = ht.id
+    LEFT JOIN teams at ON e.away_team_id = at.id
+    JOIN market_types mt ON oh.market_type_id = mt.id
+    LEFT JOIN outcome_distributions od ON (
+        oh.event_id = od.event_id 
+        AND oh.market_type_id = od.market_type_id
+        AND oh.outcome = od.outcome
+    )
+WHERE
+    oh.recorded_at >= sqlc.arg(since_time)
+    AND e.event_date > NOW()
+    AND ABS(oh.change_percentage) >= 5
+ORDER BY
+    sharp_money_score DESC
+LIMIT
+    sqlc.arg(limit_count);
 
 -- COMMENTED OUT: Requires smart_money_preferences table
 -- -- name: GetUserSmartMoneyPreferences :one

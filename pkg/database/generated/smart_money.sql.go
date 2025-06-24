@@ -384,32 +384,48 @@ SELECT
     e.event_date,
     e.home_team_id,
     e.away_team_id,
+    e.betting_volume_percentage,
     ht.name as home_team_name,
     at.name as away_team_name,
     mt.code as market_code,
-    mt.name as market_name
+    mt.name as market_name,
+    od.bet_percentage,
+    od.implied_probability,
+    -- Calculate the divergence between public betting and odds movement
+    CASE 
+        WHEN od.bet_percentage > 60 AND oh.change_percentage > 0 THEN 'public_heavy_odds_worse'
+        WHEN od.bet_percentage < 40 AND oh.change_percentage < 0 THEN 'public_light_odds_better'
+        ELSE 'normal'
+    END as movement_type,
+    -- Strength of reverse movement (public % * abs(odds change %))
+    (od.bet_percentage * ABS(oh.change_percentage) / 100) as reverse_strength
 FROM
     odds_history oh
     JOIN events e ON oh.event_id = e.id
     LEFT JOIN teams ht ON e.home_team_id = ht.id
     LEFT JOIN teams at ON e.away_team_id = at.id
     JOIN market_types mt ON oh.market_type_id = mt.id
+    LEFT JOIN outcome_distributions od ON (
+        oh.event_id = od.event_id 
+        AND oh.market_type_id = od.market_type_id
+        AND oh.outcome = od.outcome
+    )
 WHERE
     oh.recorded_at >= $1
-    AND e.event_date > NOW() -- Look for movements against typical patterns
+    AND e.event_date > NOW()
+    AND od.bet_percentage IS NOT NULL
+    -- True reverse line movements:
     AND (
-        (
-            oh.previous_value < 2.0
-            AND oh.change_percentage > 15
-        )
-        OR -- Favorites drifting
-        (
-            oh.previous_value > 4.0
-            AND oh.change_percentage < -15
-        ) -- Big underdogs shortening
+        -- Heavy public betting (>65%) but odds getting worse (going up)
+        (od.bet_percentage > 65 AND oh.change_percentage > 5)
+        OR
+        -- Light public betting (<35%) but odds getting better (going down)
+        (od.bet_percentage < 35 AND oh.change_percentage < -5)
     )
+    -- Only significant movements
+    AND ABS(oh.change_percentage) >= 5
 ORDER BY
-    ABS(oh.change_percentage) DESC
+    (od.bet_percentage * ABS(oh.change_percentage) / 100) DESC
 LIMIT
     $2
 `
@@ -420,32 +436,38 @@ type GetReverseLineMovementsParams struct {
 }
 
 type GetReverseLineMovementsRow struct {
-	ID                  int32            `db:"id" json:"id"`
-	EventID             *int32           `db:"event_id" json:"event_id"`
-	MarketTypeID        *int32           `db:"market_type_id" json:"market_type_id"`
-	Outcome             string           `db:"outcome" json:"outcome"`
-	OddsValue           float64          `db:"odds_value" json:"odds_value"`
-	PreviousValue       *float64         `db:"previous_value" json:"previous_value"`
-	WinningOdds         *float64         `db:"winning_odds" json:"winning_odds"`
-	ChangeAmount        *float64         `db:"change_amount" json:"change_amount"`
-	ChangePercentage    *float32         `db:"change_percentage" json:"change_percentage"`
-	Multiplier          *float64         `db:"multiplier" json:"multiplier"`
-	SharpMoneyIndicator *float32         `db:"sharp_money_indicator" json:"sharp_money_indicator"`
-	IsReverseMovement   *bool            `db:"is_reverse_movement" json:"is_reverse_movement"`
-	SignificanceLevel   *string          `db:"significance_level" json:"significance_level"`
-	MinutesToKickoff    *int32           `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
-	MarketParams        []byte           `db:"market_params" json:"market_params"`
-	RecordedAt          pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
-	EventExternalID     string           `db:"event_external_id" json:"event_external_id"`
-	EventDate           pgtype.Timestamp `db:"event_date" json:"event_date"`
-	HomeTeamID          *int32           `db:"home_team_id" json:"home_team_id"`
-	AwayTeamID          *int32           `db:"away_team_id" json:"away_team_id"`
-	HomeTeamName        *string          `db:"home_team_name" json:"home_team_name"`
-	AwayTeamName        *string          `db:"away_team_name" json:"away_team_name"`
-	MarketCode          string           `db:"market_code" json:"market_code"`
-	MarketName          string           `db:"market_name" json:"market_name"`
+	ID                      int32            `db:"id" json:"id"`
+	EventID                 *int32           `db:"event_id" json:"event_id"`
+	MarketTypeID            *int32           `db:"market_type_id" json:"market_type_id"`
+	Outcome                 string           `db:"outcome" json:"outcome"`
+	OddsValue               float64          `db:"odds_value" json:"odds_value"`
+	PreviousValue           *float64         `db:"previous_value" json:"previous_value"`
+	WinningOdds             *float64         `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount            *float64         `db:"change_amount" json:"change_amount"`
+	ChangePercentage        *float32         `db:"change_percentage" json:"change_percentage"`
+	Multiplier              *float64         `db:"multiplier" json:"multiplier"`
+	SharpMoneyIndicator     *float32         `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement       *bool            `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel       *string          `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff        *int32           `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	MarketParams            []byte           `db:"market_params" json:"market_params"`
+	RecordedAt              pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	EventExternalID         string           `db:"event_external_id" json:"event_external_id"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	HomeTeamID              *int32           `db:"home_team_id" json:"home_team_id"`
+	AwayTeamID              *int32           `db:"away_team_id" json:"away_team_id"`
+	BettingVolumePercentage *float32         `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	HomeTeamName            *string          `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName            *string          `db:"away_team_name" json:"away_team_name"`
+	MarketCode              string           `db:"market_code" json:"market_code"`
+	MarketName              string           `db:"market_name" json:"market_name"`
+	BetPercentage           *float32         `db:"bet_percentage" json:"bet_percentage"`
+	ImpliedProbability      *float32         `db:"implied_probability" json:"implied_probability"`
+	MovementType            string           `db:"movement_type" json:"movement_type"`
+	ReverseStrength         int32            `db:"reverse_strength" json:"reverse_strength"`
 }
 
+// Detect TRUE reverse line movements where odds move against public betting percentages
 func (q *Queries) GetReverseLineMovements(ctx context.Context, arg GetReverseLineMovementsParams) ([]GetReverseLineMovementsRow, error) {
 	rows, err := q.db.Query(ctx, getReverseLineMovements, arg.SinceTime, arg.LimitCount)
 	if err != nil {
@@ -476,10 +498,292 @@ func (q *Queries) GetReverseLineMovements(ctx context.Context, arg GetReverseLin
 			&i.EventDate,
 			&i.HomeTeamID,
 			&i.AwayTeamID,
+			&i.BettingVolumePercentage,
 			&i.HomeTeamName,
 			&i.AwayTeamName,
 			&i.MarketCode,
 			&i.MarketName,
+			&i.BetPercentage,
+			&i.ImpliedProbability,
+			&i.MovementType,
+			&i.ReverseStrength,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSharpMoneyIndicators = `-- name: GetSharpMoneyIndicators :many
+SELECT
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff, oh.market_params, oh.recorded_at,
+    e.external_id as event_external_id,
+    e.event_date,
+    e.betting_volume_percentage,
+    e.volume_rank,
+    ht.name as home_team_name,
+    at.name as away_team_name,
+    mt.code as market_code,
+    mt.name as market_name,
+    od.bet_percentage,
+    od.implied_probability,
+    -- Sharp money score calculation
+    (
+        -- Reverse line movement factor (0-40 points)
+        CASE 
+            WHEN od.bet_percentage > 70 AND oh.change_percentage > 5 THEN 40
+            WHEN od.bet_percentage > 60 AND oh.change_percentage > 3 THEN 30
+            WHEN od.bet_percentage < 30 AND oh.change_percentage < -5 THEN 40
+            WHEN od.bet_percentage < 40 AND oh.change_percentage < -3 THEN 30
+            ELSE 0
+        END +
+        -- Volume factor (0-20 points) - lower volume with movement = sharper
+        CASE
+            WHEN e.betting_volume_percentage < 1 AND ABS(oh.change_percentage) > 10 THEN 20
+            WHEN e.betting_volume_percentage < 2 AND ABS(oh.change_percentage) > 7 THEN 15
+            WHEN e.betting_volume_percentage < 5 AND ABS(oh.change_percentage) > 5 THEN 10
+            ELSE 0
+        END +
+        -- Timing factor (0-20 points) - late movement = sharper
+        CASE
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 2 THEN 20
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 6 THEN 15
+            WHEN EXTRACT(EPOCH FROM (e.event_date - oh.recorded_at)) / 3600 < 24 THEN 10
+            ELSE 5
+        END +
+        -- Movement size factor (0-20 points)
+        CASE
+            WHEN ABS(oh.change_percentage) > 20 THEN 20
+            WHEN ABS(oh.change_percentage) > 15 THEN 15
+            WHEN ABS(oh.change_percentage) > 10 THEN 10
+            WHEN ABS(oh.change_percentage) > 5 THEN 5
+            ELSE 0
+        END
+    ) as sharp_money_score
+FROM
+    odds_history oh
+    JOIN events e ON oh.event_id = e.id
+    LEFT JOIN teams ht ON e.home_team_id = ht.id
+    LEFT JOIN teams at ON e.away_team_id = at.id
+    JOIN market_types mt ON oh.market_type_id = mt.id
+    LEFT JOIN outcome_distributions od ON (
+        oh.event_id = od.event_id 
+        AND oh.market_type_id = od.market_type_id
+        AND oh.outcome = od.outcome
+    )
+WHERE
+    oh.recorded_at >= $1
+    AND e.event_date > NOW()
+    AND ABS(oh.change_percentage) >= 5
+ORDER BY
+    sharp_money_score DESC
+LIMIT
+    $2
+`
+
+type GetSharpMoneyIndicatorsParams struct {
+	SinceTime  pgtype.Timestamp `db:"since_time" json:"since_time"`
+	LimitCount int64            `db:"limit_count" json:"limit_count"`
+}
+
+type GetSharpMoneyIndicatorsRow struct {
+	ID                      int32            `db:"id" json:"id"`
+	EventID                 *int32           `db:"event_id" json:"event_id"`
+	MarketTypeID            *int32           `db:"market_type_id" json:"market_type_id"`
+	Outcome                 string           `db:"outcome" json:"outcome"`
+	OddsValue               float64          `db:"odds_value" json:"odds_value"`
+	PreviousValue           *float64         `db:"previous_value" json:"previous_value"`
+	WinningOdds             *float64         `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount            *float64         `db:"change_amount" json:"change_amount"`
+	ChangePercentage        *float32         `db:"change_percentage" json:"change_percentage"`
+	Multiplier              *float64         `db:"multiplier" json:"multiplier"`
+	SharpMoneyIndicator     *float32         `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement       *bool            `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel       *string          `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff        *int32           `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	MarketParams            []byte           `db:"market_params" json:"market_params"`
+	RecordedAt              pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	EventExternalID         string           `db:"event_external_id" json:"event_external_id"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	BettingVolumePercentage *float32         `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	VolumeRank              *int32           `db:"volume_rank" json:"volume_rank"`
+	HomeTeamName            *string          `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName            *string          `db:"away_team_name" json:"away_team_name"`
+	MarketCode              string           `db:"market_code" json:"market_code"`
+	MarketName              string           `db:"market_name" json:"market_name"`
+	BetPercentage           *float32         `db:"bet_percentage" json:"bet_percentage"`
+	ImpliedProbability      *float32         `db:"implied_probability" json:"implied_probability"`
+	SharpMoneyScore         int32            `db:"sharp_money_score" json:"sharp_money_score"`
+}
+
+// Comprehensive sharp money detection combining multiple factors
+func (q *Queries) GetSharpMoneyIndicators(ctx context.Context, arg GetSharpMoneyIndicatorsParams) ([]GetSharpMoneyIndicatorsRow, error) {
+	rows, err := q.db.Query(ctx, getSharpMoneyIndicators, arg.SinceTime, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetSharpMoneyIndicatorsRow{}
+	for rows.Next() {
+		var i GetSharpMoneyIndicatorsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.MarketTypeID,
+			&i.Outcome,
+			&i.OddsValue,
+			&i.PreviousValue,
+			&i.WinningOdds,
+			&i.ChangeAmount,
+			&i.ChangePercentage,
+			&i.Multiplier,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
+			&i.MarketParams,
+			&i.RecordedAt,
+			&i.EventExternalID,
+			&i.EventDate,
+			&i.BettingVolumePercentage,
+			&i.VolumeRank,
+			&i.HomeTeamName,
+			&i.AwayTeamName,
+			&i.MarketCode,
+			&i.MarketName,
+			&i.BetPercentage,
+			&i.ImpliedProbability,
+			&i.SharpMoneyScore,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSteamMoves = `-- name: GetSteamMoves :many
+SELECT
+    oh.id, oh.event_id, oh.market_type_id, oh.outcome, oh.odds_value, oh.previous_value, oh.winning_odds, oh.change_amount, oh.change_percentage, oh.multiplier, oh.sharp_money_indicator, oh.is_reverse_movement, oh.significance_level, oh.minutes_to_kickoff, oh.market_params, oh.recorded_at,
+    e.external_id as event_external_id,
+    e.event_date,
+    e.betting_volume_percentage,
+    ht.name as home_team_name,
+    at.name as away_team_name,
+    mt.code as market_code,
+    mt.name as market_name,
+    -- Time since last movement
+    EXTRACT(EPOCH FROM (oh.recorded_at - LAG(oh.recorded_at) OVER (
+        PARTITION BY oh.event_id, oh.market_type_id, oh.outcome 
+        ORDER BY oh.recorded_at
+    ))) as seconds_since_last_move,
+    -- Running total of movements in last hour
+    COUNT(*) OVER (
+        PARTITION BY oh.event_id, oh.market_type_id, oh.outcome 
+        ORDER BY oh.recorded_at 
+        RANGE BETWEEN INTERVAL '1 hour' PRECEDING AND CURRENT ROW
+    ) as movements_last_hour
+FROM
+    odds_history oh
+    JOIN events e ON oh.event_id = e.id
+    LEFT JOIN teams ht ON e.home_team_id = ht.id
+    LEFT JOIN teams at ON e.away_team_id = at.id
+    JOIN market_types mt ON oh.market_type_id = mt.id
+WHERE
+    oh.recorded_at >= $1
+    AND e.event_date > NOW()
+    -- Significant movement
+    AND ABS(oh.change_percentage) >= 3
+    -- Multiple movements in short time indicates steam
+    AND oh.event_id IN (
+        SELECT event_id 
+        FROM odds_history 
+        WHERE recorded_at >= $1
+        GROUP BY event_id, market_type_id, outcome
+        HAVING COUNT(*) >= 3 -- At least 3 movements
+    )
+ORDER BY
+    oh.recorded_at DESC
+LIMIT
+    $2
+`
+
+type GetSteamMovesParams struct {
+	SinceTime  pgtype.Timestamp `db:"since_time" json:"since_time"`
+	LimitCount int64            `db:"limit_count" json:"limit_count"`
+}
+
+type GetSteamMovesRow struct {
+	ID                      int32            `db:"id" json:"id"`
+	EventID                 *int32           `db:"event_id" json:"event_id"`
+	MarketTypeID            *int32           `db:"market_type_id" json:"market_type_id"`
+	Outcome                 string           `db:"outcome" json:"outcome"`
+	OddsValue               float64          `db:"odds_value" json:"odds_value"`
+	PreviousValue           *float64         `db:"previous_value" json:"previous_value"`
+	WinningOdds             *float64         `db:"winning_odds" json:"winning_odds"`
+	ChangeAmount            *float64         `db:"change_amount" json:"change_amount"`
+	ChangePercentage        *float32         `db:"change_percentage" json:"change_percentage"`
+	Multiplier              *float64         `db:"multiplier" json:"multiplier"`
+	SharpMoneyIndicator     *float32         `db:"sharp_money_indicator" json:"sharp_money_indicator"`
+	IsReverseMovement       *bool            `db:"is_reverse_movement" json:"is_reverse_movement"`
+	SignificanceLevel       *string          `db:"significance_level" json:"significance_level"`
+	MinutesToKickoff        *int32           `db:"minutes_to_kickoff" json:"minutes_to_kickoff"`
+	MarketParams            []byte           `db:"market_params" json:"market_params"`
+	RecordedAt              pgtype.Timestamp `db:"recorded_at" json:"recorded_at"`
+	EventExternalID         string           `db:"event_external_id" json:"event_external_id"`
+	EventDate               pgtype.Timestamp `db:"event_date" json:"event_date"`
+	BettingVolumePercentage *float32         `db:"betting_volume_percentage" json:"betting_volume_percentage"`
+	HomeTeamName            *string          `db:"home_team_name" json:"home_team_name"`
+	AwayTeamName            *string          `db:"away_team_name" json:"away_team_name"`
+	MarketCode              string           `db:"market_code" json:"market_code"`
+	MarketName              string           `db:"market_name" json:"market_name"`
+	SecondsSinceLastMove    float64          `db:"seconds_since_last_move" json:"seconds_since_last_move"`
+	MovementsLastHour       int64            `db:"movements_last_hour" json:"movements_last_hour"`
+}
+
+// Detect rapid odds movements across multiple bookmakers (steam moves)
+func (q *Queries) GetSteamMoves(ctx context.Context, arg GetSteamMovesParams) ([]GetSteamMovesRow, error) {
+	rows, err := q.db.Query(ctx, getSteamMoves, arg.SinceTime, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetSteamMovesRow{}
+	for rows.Next() {
+		var i GetSteamMovesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.MarketTypeID,
+			&i.Outcome,
+			&i.OddsValue,
+			&i.PreviousValue,
+			&i.WinningOdds,
+			&i.ChangeAmount,
+			&i.ChangePercentage,
+			&i.Multiplier,
+			&i.SharpMoneyIndicator,
+			&i.IsReverseMovement,
+			&i.SignificanceLevel,
+			&i.MinutesToKickoff,
+			&i.MarketParams,
+			&i.RecordedAt,
+			&i.EventExternalID,
+			&i.EventDate,
+			&i.BettingVolumePercentage,
+			&i.HomeTeamName,
+			&i.AwayTeamName,
+			&i.MarketCode,
+			&i.MarketName,
+			&i.SecondsSinceLastMove,
+			&i.MovementsLastHour,
 		); err != nil {
 			return nil, err
 		}
