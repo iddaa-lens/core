@@ -46,6 +46,6 @@ func (j *MarketConfigSyncJob) Execute(ctx context.Context) error {
 }
 
 func (j *MarketConfigSyncJob) Schedule() string {
-	// Run daily at 6 AM to sync market configurations
-	return "0 6 * * *"
+	// Run every 15 minutes to sync market configurations
+	return "*/15 * * * *"
 }

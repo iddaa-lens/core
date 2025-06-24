@@ -52,6 +52,6 @@ func (j *ConfigSyncJob) Name() string {
 }
 
 func (j *ConfigSyncJob) Schedule() string {
-	// Run weekly on Mondays at 6 AM - config changes very infrequently
-	return "0 6 * * 1"
+	// Run daily at 12 PM
+	return "0 12 * * *"
 }

@@ -101,7 +101,6 @@ func (j *StatisticsSyncJob) Execute(ctx context.Context) error {
 }
 
 func (j *StatisticsSyncJob) Schedule() string {
-	// Run every 15 minutes during active hours (8 AM to 11 PM)
-	// This covers most European football match times
-	return "*/15 8-23 * * *"
+	// Run every 15 minutes throughout the day
+	return "*/15 * * * *"
 }

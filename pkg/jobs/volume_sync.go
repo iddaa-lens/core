@@ -139,6 +139,6 @@ func (j *VolumeSyncJob) processSportsConcurrently(ctx context.Context, sports []
 }
 
 func (j *VolumeSyncJob) Schedule() string {
-	// Run every 20 minutes to track volume changes
-	return "*/20 * * * *"
+	// Run every 15 minutes to track volume changes
+	return "*/15 * * * *"
 }

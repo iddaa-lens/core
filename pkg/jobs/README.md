@@ -10,8 +10,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 1. Config Sync (`config`)
 
-- **Schedule**: `0 6 * * 1` (Weekly on Mondays at 6 AM)
-- **Purpose**: Syncs application configuration from Iddaa's content API
+- **Schedule**: `0 12 * * *` (Daily at 12 PM)
+- **Summary**: Syncs app configuration settings from Iddaa API
 - **Implementation**: `config_sync.go`
 - **Dependencies**: Iddaa API access
 - **API Endpoint**: `https://contentv2.iddaa.com/appconfig?platform=WEB`
@@ -21,7 +21,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 2. Sports Sync (`sports`)
 
 - **Schedule**: `*/30 * * * *` (Every 30 minutes)
-- **Purpose**: Keeps sports information up to date with live/upcoming event counts
+- **Summary**: Updates sports list with live/upcoming event counts
 - **Implementation**: `sports_sync.go`
 - **Dependencies**: Iddaa API access
 - **API Endpoint**: `https://sportsbookv2.iddaa.com/sportsbook/info`
@@ -32,7 +32,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 3. Events Sync (`events`)
 
 - **Schedule**: `*/5 * * * *` (Every 5 minutes)
-- **Purpose**: Captures rapid odds movements and event data for all active sports
+- **Summary**: Syncs match events and basic odds for all sports
 - **Implementation**: `events_sync.go`
 - **Dependencies**: Iddaa API access, requires sports data
 - **API Endpoint**: `https://sportsbookv2.iddaa.com/sportsbook/events?st={sport_id}&type=0&version=0`
@@ -42,8 +42,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 4. Volume Sync (`volume`)
 
-- **Schedule**: `*/20 * * * *` (Every 20 minutes)
-- **Purpose**: Tracks betting volume changes for all sports
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Tracks betting volume percentages and rankings
 - **Implementation**: `volume_sync.go`
 - **Dependencies**: Iddaa API access, requires sports data
 - **Database Tables**: `betting_volume_history`
@@ -51,8 +51,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 5. Distribution Sync (`distribution`)
 
-- **Schedule**: `0 * * * *` (Every hour)
-- **Purpose**: Tracks betting distribution changes for all sports
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Updates outcome betting distribution percentages
 - **Implementation**: `distribution_sync.go`
 - **Dependencies**: Iddaa API access, requires sports data
 - **Database Tables**: `outcome_distributions`, `outcome_distribution_history`
@@ -60,8 +60,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 6. Analytics Refresh (`analytics`)
 
-- **Schedule**: `0 */6 * * *` (Every 6 hours)
-- **Purpose**: Refreshes materialized views and analytics
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Refreshes materialized views for analytics
 - **Implementation**: `analytics_refresh.go`
 - **Dependencies**: Database access only (no external APIs)
 - **Database Operations**: Refreshes materialized views (e.g., contrarian bets)
@@ -70,8 +70,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 7. Market Config Sync (`market_config`)
 
-- **Schedule**: `0 6 * * *` (Daily at 6 AM)
-- **Purpose**: Syncs market configurations and betting types
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Syncs 600+ market types and betting options
 - **Implementation**: `market_config_sync.go`
 - **Dependencies**: Iddaa API access
 - **Database Tables**: `market_types`
@@ -80,8 +80,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 8. Statistics Sync (`statistics`)
 
-- **Schedule**: `*/15 8-23 * * *` (Every 15 minutes during 8 AM to 11 PM)
-- **Purpose**: Syncs event statistics for football covering European match times
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Fetches match statistics during active hours
 - **Implementation**: `statistics_sync.go`
 - **Dependencies**: Statistics service API access
 - **Database Tables**: `match_statistics`
@@ -91,7 +91,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 9. Detailed Odds Sync (`detailed_odds`)
 
 - **Schedule**: `*/2 * * * *` (Every 2 minutes)
-- **Purpose**: High-frequency detailed odds tracking for live and near-live events using individual event endpoint
+- **Summary**: High-frequency tracking of all markets for active events
 - **Implementation**: `detailed_odds_sync.go`
 - **Dependencies**: Iddaa API access, requires existing events data
 - **API Endpoint**: `https://sportsbookv2.iddaa.com/sportsbook/event/{external_id}`
@@ -107,7 +107,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 10. Leagues Sync (`leagues`)
 
 - **Schedule**: `0 2 * * *` (Daily at 2 AM)
-- **Purpose**: Syncs leagues and teams with Football API integration and AI translation
+- **Summary**: Syncs leagues/teams with API-Football matching
 - **Implementation**: `leagues_sync.go`
 - **Dependencies**:
   - Iddaa API access (required)
@@ -122,8 +122,8 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 
 ### 11. Smart Money Processor (`smart_money_processor`)
 
-- **Schedule**: `*/10 * * * *` (Every 10 minutes)
-- **Purpose**: Detects smart money movements by analyzing odds changes and betting patterns
+- **Schedule**: `*/15 * * * *` (Every 15 minutes)
+- **Summary**: Detects sharp money movements and generates alerts
 - **Implementation**: `smart_money_processor.go`
 - **Dependencies**: Database access, requires existing odds and distribution data
 - **Database Tables**: `smart_money_alerts`, `smart_money_movements`
@@ -136,7 +136,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 12. API Football League Matching (`api_football_league_matching`)
 
 - **Schedule**: `0 3 * * *` (Daily at 3 AM)
-- **Purpose**: Matches Turkish leagues with API-Football international league data
+- **Summary**: Maps Turkish leagues to API-Football IDs
 - **Implementation**: `api_football_league_matching.go`
 - **Dependencies**: API-Football API key required
 - **Database Tables**: `league_mappings`
@@ -149,7 +149,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 13. API Football Team Matching (`api_football_team_matching`)
 
 - **Schedule**: `0 4 * * *` (Daily at 4 AM)
-- **Purpose**: Matches Turkish teams with API-Football international team data
+- **Summary**: Maps Turkish teams to API-Football IDs
 - **Implementation**: `api_football_team_matching.go`
 - **Dependencies**: API-Football API key required
 - **Database Tables**: `team_mappings`
@@ -162,7 +162,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 14. API Football League Enrichment (`api_football_league_enrichment`)
 
 - **Schedule**: `0 5 * * 0` (Weekly on Sundays at 5 AM)
-- **Purpose**: Enriches league data with logos, metadata from API-Football
+- **Summary**: Adds logos and metadata to mapped leagues
 - **Implementation**: `api_football_league_enrichment.go`
 - **Dependencies**: API-Football API key required, requires league mappings
 - **Database Tables**: `leagues` (updates enrichment fields)
@@ -175,7 +175,7 @@ The system includes 15 distinct cron jobs that handle data synchronization, anal
 ### 15. API Football Team Enrichment (`api_football_team_enrichment`)
 
 - **Schedule**: `0 6 * * 0` (Weekly on Sundays at 6 AM)
-- **Purpose**: Enriches team data with logos, venue info from API-Football
+- **Summary**: Adds logos and venue data to mapped teams
 - **Implementation**: `api_football_team_enrichment.go`
 - **Dependencies**: API-Football API key required, requires team mappings
 - **Database Tables**: `teams` (updates enrichment fields)

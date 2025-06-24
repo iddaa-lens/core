@@ -139,6 +139,6 @@ func (j *DistributionSyncJob) processSportsConcurrently(ctx context.Context, spo
 }
 
 func (j *DistributionSyncJob) Schedule() string {
-	// Run every hour to track betting distribution changes
-	return "0 * * * *"
+	// Run every 15 minutes to track betting distribution changes
+	return "*/15 * * * *"
 }

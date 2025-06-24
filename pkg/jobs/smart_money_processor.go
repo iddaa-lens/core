@@ -29,9 +29,9 @@ func (j *SmartMoneyProcessorJob) Name() string {
 	return "smart_money_processor"
 }
 
-// Schedule returns the cron schedule - every minute for quick alert generation
+// Schedule returns the cron schedule - every 15 minutes
 func (j *SmartMoneyProcessorJob) Schedule() string {
-	return "* * * * *" // Every minute
+	return "*/15 * * * *" // Every 15 minutes
 }
 
 // Execute runs the smart money processing

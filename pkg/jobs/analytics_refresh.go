@@ -91,6 +91,6 @@ func (j *AnalyticsRefreshJob) Execute(ctx context.Context) error {
 }
 
 func (j *AnalyticsRefreshJob) Schedule() string {
-	// Run every 5 minutes to keep materialized views fresh
-	return "*/5 * * * *"
+	// Run every 15 minutes to keep materialized views fresh
+	return "*/15 * * * *"
 }
